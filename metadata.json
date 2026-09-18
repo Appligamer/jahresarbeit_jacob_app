@@ -1,0 +1,6 @@
+{
+  "name": "Tischtennisball-Sortierer Dashboard",
+  "description": "Dashboard zur Steuerung eines ESP32-basierten Tischtennisball-Sortierapparats mit Smart-Home-Anbindung, Ballzähler und flexibler Behälter-Sortierung für die NwT-Jahresarbeit.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

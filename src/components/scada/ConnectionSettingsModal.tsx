@@ -16,6 +16,7 @@ interface ConnectionSettingsModalProps {
   config: ConnectionConfig;
   onSaveConfig: (newConfig: Partial<ConnectionConfig>) => void;
   onReconnect: () => void;
+  onDisconnect?: () => void;
 }
 
 export const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = ({
@@ -24,6 +25,7 @@ export const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = (
   config,
   onSaveConfig,
   onReconnect,
+  onDisconnect,
 }) => {
   const [host, setHost] = useState(config.host);
   const [port, setPort] = useState(String(config.port));
@@ -189,6 +191,19 @@ export const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = (
             </div>
 
             <div className="flex items-center gap-2">
+              {onDisconnect && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDisconnect();
+                    onClose();
+                  }}
+                  className="px-3 py-2 rounded bg-[#FF3B30]/10 border border-[#FF3B30]/30 text-[#FF3B30] hover:bg-[#FF3B30]/20 text-xs font-semibold cursor-pointer"
+                >
+                  Trennen
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onClose}

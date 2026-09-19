@@ -1,6 +1,6 @@
 {
-  "name": "Tischtennisball-Sortierer Dashboard",
-  "description": "Dashboard zur Steuerung eines ESP32-basierten Tischtennisball-Sortierapparats mit Smart-Home-Anbindung, Ballzähler und flexibler Behälter-Sortierung für die NwT-Jahresarbeit.",
+  "name": "ESP32 SCADA Farbsortieranlage",
+  "description": "Echtzeit-Überwachung und Steuerung einer automatisierten Tischtennisball-Farbsortieranlage auf ESP32-Basis mit Förderband-Schieberegister und SCADA-Telemetrie.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

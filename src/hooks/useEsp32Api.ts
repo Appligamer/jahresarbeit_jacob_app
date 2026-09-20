@@ -6,27 +6,16 @@ import type {
   ScadaLogItem 
 } from '../types/scada.ts';
 
-const CONFIG_STORAGE_KEY = 'NWT2026_ESP32_SCADA_CONFIG_V1';
+const CONFIG_STORAGE_KEY = 'NWT2026_ESP32_SCADA_CONFIG_PROD';
 
-function getDefaultConfig(): Esp32Config {
-  if (typeof window === 'undefined') {
-    return {
-      baseUrl: 'http://192.168.178.50',
-      apiKey: 'NWT2026',
-      pollingIntervalMs: 400,
-      useProxyFallback: false,
-    };
-  }
-
-  // Default to current host or typical ESP32 LAN IP
-  const currentOrigin = window.location.origin;
-  return {
-    baseUrl: currentOrigin,
-    apiKey: 'NWT2026',
-    pollingIntervalMs: 400,
-    useProxyFallback: false,
-  };
-}
+// Standard-Netzwerkadressen gemaess Spezifikation:
+// Access-Point-Modus: http://192.168.4.1
+// Authentifizierung: Zwingender Parameter ?key=NWT-2026-SORT-X79
+const DEFAULT_CONFIG: Esp32Config = {
+  baseUrl: 'http://192.168.4.1',
+  apiKey: 'NWT-2026-SORT-X79',
+  pollingIntervalMs: 500,
+};
 
 const INITIAL_TELEMETRY: Esp32TelemetryResponse = {
   running: false,
@@ -51,42 +40,50 @@ const INITIAL_TELEMETRY: Esp32TelemetryResponse = {
 
 export function useEsp32Api() {
   const [config, setConfig] = useState<Esp32Config>(() => {
-    if (typeof window === 'undefined') return getDefaultConfig();
+    if (typeof window === 'undefined') return DEFAULT_CONFIG;
     try {
       const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
       if (saved) {
-        return { ...getDefaultConfig(), ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        return {
+          baseUrl: parsed.baseUrl || DEFAULT_CONFIG.baseUrl,
+          apiKey: parsed.apiKey || DEFAULT_CONFIG.apiKey,
+          pollingIntervalMs: parsed.pollingIntervalMs || DEFAULT_CONFIG.pollingIntervalMs,
+        };
       }
-    } catch (e) {
-      console.warn('Failed to load saved SCADA config', e);
+    } catch (err) {
+      console.warn('Fehler beim Laden der gespeicherten Konfiguration', err);
     }
-    return getDefaultConfig();
+    return DEFAULT_CONFIG;
   });
 
   const [telemetry, setTelemetry] = useState<Esp32TelemetryResponse>(INITIAL_TELEMETRY);
-  const [connectionStatus, setConnectionStatus] = useState<ClientConnectionStatus>('STANDBY');
+  const [connectionStatus, setConnectionStatus] = useState<ClientConnectionStatus>('GETRENNT');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [lastHeartbeat, setLastHeartbeat] = useState<Date | null>(null);
+  const [mixedContentWarning, setMixedContentWarning] = useState<string | null>(null);
   const [logs, setLogs] = useState<ScadaLogItem[]>([
     {
       id: 'log-init',
       timestamp: new Date().toLocaleTimeString('de-DE', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0'),
       type: 'SYS',
-      message: 'SCADA Leitstand initialisiert. Starte zyklische Abfrage (GET_STATUS)...',
+      message: 'SCADA Leitstand initialisiert. Ziel: ' + (config.baseUrl || 'http://192.168.4.1'),
     },
   ]);
 
   const consecutiveErrorsRef = useRef<number>(0);
   const isRequestInProgressRef = useRef<boolean>(false);
   const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const configRef = useRef<Esp32Config>(config);
+  const isConnectedRef = useRef<boolean>(false);
 
   useEffect(() => {
     configRef.current = config;
     try {
       localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
-    } catch (e) {
-      console.warn('Failed to persist SCADA config', e);
+    } catch (err) {
+      console.warn('Fehler beim Speichern der Konfiguration', err);
     }
   }, [config]);
 
@@ -94,7 +91,7 @@ export function useEsp32Api() {
     const timeStr = new Date().toLocaleTimeString('de-DE', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0');
     setLogs((prev) => [
       {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         timestamp: timeStr,
         type,
         message,
@@ -104,8 +101,9 @@ export function useEsp32Api() {
     ]);
   }, []);
 
-  // Construct target URL
-  const buildRequestUrl = useCallback((cmd: string, params?: Record<string, string | number>, proxy = false) => {
+  // URL-Erstellung gemaess Controller-Spezifikation:
+  // Single-Endpoint: <baseUrl>/api?key=<apiKey>&cmd=<cmd>...
+  const buildRequestUrl = useCallback((cmd: string, params?: Record<string, string | number>) => {
     const currentCfg = configRef.current;
     let base = currentCfg.baseUrl.trim();
     if (base.endsWith('/')) {
@@ -122,16 +120,10 @@ export function useEsp32Api() {
       });
     }
 
-    const directUrl = `${base}/api?${query.toString()}`;
-
-    if (proxy && typeof window !== 'undefined' && !base.startsWith(window.location.origin)) {
-      return `/api/proxy?targetUrl=${encodeURIComponent(directUrl)}`;
-    }
-
-    return directUrl;
+    return `${base}/api?${query.toString()}`;
   }, []);
 
-  // Universal API Requester
+  // Universelle REST-Anfrage mit AbortController Timeout (2000 ms)
   const sendRequest = useCallback(async (
     cmd: string,
     params?: Record<string, string | number>,
@@ -139,11 +131,15 @@ export function useEsp32Api() {
   ): Promise<boolean> => {
     const currentCfg = configRef.current;
     const startTime = performance.now();
-    const url = buildRequestUrl(cmd, params, currentCfg.useProxyFallback);
+    const url = buildRequestUrl(cmd, params);
+
+    // Pruefung auf Mixed-Content (HTTPS-Host versucht HTTP-Ziel aufzurufen)
+    const isHttpsContext = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const isHttpTarget = currentCfg.baseUrl.trim().toLowerCase().startsWith('http://');
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2800);
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
 
       const res = await fetch(url, {
         method: 'GET',
@@ -159,9 +155,10 @@ export function useEsp32Api() {
 
       if (res.status === 401) {
         consecutiveErrorsRef.current += 1;
-        setConnectionStatus('AUTH_ERROR');
+        setConnectionStatus('FEHLER');
+        isConnectedRef.current = false;
         setLatencyMs(roundTrip);
-        addLog('ERROR', `ESP32 Authentifizierungsfehler (HTTP 401): Ungültiger API-Key '${currentCfg.apiKey}'`, roundTrip);
+        addLog('ERROR', `ESP32 Authentifizierungsfehler (HTTP 401): Ungueltiger API-Key '${currentCfg.apiKey}'`, roundTrip);
         return false;
       }
 
@@ -170,23 +167,18 @@ export function useEsp32Api() {
       }
 
       const data: Esp32TelemetryResponse = await res.json();
-      
-      // Successfully received valid telemetry payload
+
+      // Erfolgreich empfangen
       consecutiveErrorsRef.current = 0;
+      setMixedContentWarning(null);
       setLatencyMs(roundTrip);
       setLastHeartbeat(new Date());
       setTelemetry(data);
-
-      if (data.running) {
-        setConnectionStatus('ONLINE');
-      } else if (data.status === 'STANDBY') {
-        setConnectionStatus('STANDBY');
-      } else {
-        setConnectionStatus('ONLINE');
-      }
+      setConnectionStatus('ONLINE');
+      isConnectedRef.current = true;
 
       if (isManual) {
-        addLog('CMD', `Befehl '${cmd}' erfolgreich ausgeführt: Status ${data.status}, Takt ${data.cycle_ms}ms`, roundTrip);
+        addLog('CMD', `Befehl '${cmd}' ausgefuehrt: Status ${data.status}, Takt ${data.cycle_ms}ms`, roundTrip);
       }
 
       return true;
@@ -194,14 +186,23 @@ export function useEsp32Api() {
       const roundTrip = Math.round(performance.now() - startTime);
       consecutiveErrorsRef.current += 1;
 
-      // After 2 consecutive failures, switch to OFFLINE
+      // Wenn im HTTPS-Kontext ein HTTP-Endpunkt fehlschlaegt, ist dies typischerweise eine Browser-Blockade
+      if (isHttpsContext && isHttpTarget) {
+        const warningMsg = "Mixed-Content-Blockade: Browser blockiert lokale HTTP-Aufrufe. Bitte Seite lokal ueber HTTP ausfuehren oder im Browser 'Unsichere Inhalte' fuer diese Seite aktivieren.";
+        setMixedContentWarning(warningMsg);
+      }
+
+      // Sofortiger Status-Uebergang bei Verbindungsverlust
       if (consecutiveErrorsRef.current >= 2) {
-        setConnectionStatus('OFFLINE');
+        setConnectionStatus('FEHLER');
+        isConnectedRef.current = false;
         setLatencyMs(null);
+      } else if (!isConnectedRef.current) {
+        setConnectionStatus('VERBINDE...');
       }
 
       const errMsg = err instanceof Error ? err.message : 'Verbindungsfehler';
-      
+
       if (isManual) {
         addLog('ERROR', `Fehler bei Befehl '${cmd}': ${errMsg}`, roundTrip);
       } else if (consecutiveErrorsRef.current === 2) {
@@ -212,35 +213,53 @@ export function useEsp32Api() {
     }
   }, [buildRequestUrl, addLog]);
 
-  // Polling cycle
+  // SCADA-Polling-Engine:
+  // - Wenn verbunden: zyklisch alle 500 ms (oder dyn. cycle_ms / 2) GET_STATUS
+  // - Bei Verbindungsverlust: Stoppen des schnellen Pollings; periodischer Reconnect alle 3000 ms
   useEffect(() => {
     let isActive = true;
 
-    const poll = async () => {
+    const runEngine = async () => {
       if (!isActive) return;
+
       if (!isRequestInProgressRef.current) {
         isRequestInProgressRef.current = true;
         await sendRequest('GET_STATUS', undefined, false);
         isRequestInProgressRef.current = false;
       }
 
-      if (isActive) {
-        const interval = Math.max(250, Math.min(2000, config.pollingIntervalMs || 400));
-        pollingTimerRef.current = setTimeout(poll, interval);
+      if (!isActive) return;
+
+      // Dynamisches Zeitintervall:
+      // Bei ONLINE: 500ms (oder halbe Zykluszeit, wenn definiert)
+      // Bei FEHLER / GETRENNT: Reconnect-Zyklus alle 3000ms
+      let nextDelay = 3000;
+      if (isConnectedRef.current) {
+        const dynInterval = telemetry.cycle_ms ? Math.floor(telemetry.cycle_ms / 2) : 500;
+        nextDelay = Math.max(250, Math.min(1000, dynInterval));
       }
+
+      pollingTimerRef.current = setTimeout(runEngine, nextDelay);
     };
 
-    poll();
+    // Sofortiger Start des ersten Abrufversuchs
+    setConnectionStatus('VERBINDE...');
+    runEngine();
 
     return () => {
       isActive = false;
       if (pollingTimerRef.current) {
         clearTimeout(pollingTimerRef.current);
+        pollingTimerRef.current = null;
+      }
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
     };
-  }, [config.baseUrl, config.apiKey, config.pollingIntervalMs, config.useProxyFallback, sendRequest]);
+  }, [config.baseUrl, config.apiKey, sendRequest]);
 
-  // Public Actions
+  // Externe Aktionen
   const executeCommand = useCallback(async (
     cmd: string,
     params?: Record<string, string | number>
@@ -250,13 +269,17 @@ export function useEsp32Api() {
 
   const updateConfig = useCallback((partial: Partial<Esp32Config>) => {
     setConfig((prev) => ({ ...prev, ...partial }));
+    consecutiveErrorsRef.current = 0;
+    setConnectionStatus('VERBINDE...');
   }, []);
 
   const clearLogs = useCallback(() => {
     setLogs([]);
   }, []);
 
-  const triggerPollingNow = useCallback(() => {
+  const triggerReconnectNow = useCallback(() => {
+    consecutiveErrorsRef.current = 0;
+    setConnectionStatus('VERBINDE...');
     sendRequest('GET_STATUS', undefined, false);
   }, [sendRequest]);
 
@@ -266,10 +289,11 @@ export function useEsp32Api() {
     latencyMs,
     lastHeartbeat,
     config,
+    mixedContentWarning,
     updateConfig,
     executeCommand,
     logs,
     clearLogs,
-    triggerPollingNow,
+    triggerReconnectNow,
   };
 }

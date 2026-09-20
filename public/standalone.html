@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NWT-2026 SORTIERLEITSTAND - STANDALONE SCADA</title>
+  <meta name="description" content="Autonomes SCADA-Dashboard fuer Tischtennisball-Farbsortieranlage (NWT-Jahresarbeit 2026, Entwickler: Jacob Glathe)">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    :root {
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    body {
+      font-family: var(--font-mono);
+      background-color: #06080d;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    .scada-panel {
+      background-color: #0f172a;
+      border: 1px solid #1e293b;
+    }
+    .tech-grid {
+      background-size: 24px 24px;
+      background-image: 
+        linear-gradient(to right, rgba(30, 41, 59, 0.3) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(30, 41, 59, 0.3) 1px, transparent 1px);
+    }
+    .slot-striped {
+      background: repeating-linear-gradient(45deg, #f59e0b, #f59e0b 8px, #d946ef 8px, #d946ef 16px);
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-mono selection:bg-[#10b981]/30 selection:text-[#10b981]">
+
+  <!-- HEADER -->
+  <header class="bg-[#090d16] border-b border-[#1e293b] px-4 py-3 sticky top-0 z-30">
+    <div class="max-w-[1680px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-[#1e293b] border border-[#334155] flex items-center justify-center text-[#10b981] font-bold text-sm">
+          [S]
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm sm:text-base font-bold text-white tracking-wider uppercase">
+              NWT-2026 SORTIERLEITSTAND — ESP32 SCADA
+            </h1>
+            <span class="text-[10px] px-1.5 py-0.2 bg-[#1e293b] text-slate-300 border border-slate-700">
+              STANDALONE
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400">
+            Entwickler: Jacob Glathe | NWT-Jahresarbeit 2026 | Takt: 75mm FIFO
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 text-xs">
+        <div id="header_status_badge" class="px-3 py-1 bg-slate-800 border border-slate-600 text-slate-300 font-bold uppercase tracking-wider">
+          STATUS: INITIALISIERUNG
+        </div>
+        <div id="header_latency_badge" class="hidden sm:block px-2.5 py-1 bg-[#0b1120] border border-[#1e293b] text-slate-400">
+          -- ms RTT
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- HAUPTBEREICH -->
+  <main class="flex-1 max-w-[1680px] w-full mx-auto px-3 sm:px-5 py-5 flex flex-col gap-5">
+
+    <!-- 1. DYNAMISCHE VERBINDUNGSVERWALTUNG -->
+    <section class="scada-panel p-4 sm:p-5 w-full">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#1e293b]">
+        <div>
+          <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+            VERBINDUNGSVERWALTUNG (CONTROLLER COMMUNICATION)
+          </h2>
+          <p class="text-[11px] text-slate-400">
+            REST-Schnittstelle: /api?key=...&cmd=... (Standard: http://192.168.4.1)
+          </p>
+        </div>
+        <div id="connection_badge" class="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-slate-800 border border-slate-600 text-slate-400">
+          STATUS: GETRENNT
+        </div>
+      </div>
+
+      <form id="connection_form" class="grid grid-cols-1 md:grid-cols-12 gap-3 mt-4 items-end text-xs">
+        <div class="md:col-span-6">
+          <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">
+            ESP32 Host / Basis-URL
+          </label>
+          <input 
+            type="text" 
+            id="cfg_host" 
+            value="http://192.168.4.1" 
+            class="w-full bg-[#070b14] border border-[#1e293b] text-slate-100 px-3 py-2.5 outline-none focus:border-[#10b981]"
+            required
+          >
+        </div>
+
+        <div class="md:col-span-4">
+          <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">
+            API-Key
+          </label>
+          <input 
+            type="text" 
+            id="cfg_key" 
+            value="NWT-2026-SORT-X79" 
+            class="w-full bg-[#070b14] border border-[#1e293b] text-slate-100 px-3 py-2.5 outline-none focus:border-[#10b981]"
+            required
+          >
+        </div>
+
+        <div class="md:col-span-2 flex items-center gap-2">
+          <button 
+            type="submit" 
+            id="btn_save_config"
+            class="flex-1 py-2.5 bg-[#10b981] hover:bg-[#059669] text-black font-bold uppercase cursor-pointer"
+          >
+            SPEICHERN
+          </button>
+          <button 
+            type="button" 
+            id="btn_reconnect"
+            class="px-3 py-2.5 bg-[#0f172a] hover:bg-[#1e293b] border border-[#334155] text-slate-200 cursor-pointer"
+            title="Jetzt manuell abfragen"
+          >
+            POLL
+          </button>
+        </div>
+      </form>
+
+      <!-- Schnell-Presets -->
+      <div class="mt-3 pt-2.5 border-t border-[#1e293b] flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-slate-500 uppercase">Presets:</span>
+          <button type="button" class="px-2 py-0.5 bg-[#0b1120] hover:bg-[#1e293b] border border-[#1e293b] text-slate-300 cursor-pointer" onclick="setPresetUrl('http://192.168.4.1')">
+            AP-Mode (192.168.4.1)
+          </button>
+          <button type="button" class="px-2 py-0.5 bg-[#0b1120] hover:bg-[#1e293b] border border-[#1e293b] text-slate-300 cursor-pointer" onclick="setPresetUrl('http://192.168.178.50')">
+            WLAN (192.168.178.50)
+          </button>
+          <button type="button" class="px-2 py-0.5 bg-[#0b1120] hover:bg-[#1e293b] border border-[#1e293b] text-slate-300 cursor-pointer" onclick="setPresetUrl(window.location.origin)">
+            Aktueller Host
+          </button>
+        </div>
+        <div class="text-[10px] text-slate-500">
+          500 ms Polling / 3000 ms Reconnect / 2000 ms Timeout
+        </div>
+      </div>
+
+      <!-- Mixed-Content Box -->
+      <div id="mixed_content_box" class="hidden mt-3 p-3 bg-[#ef4444]/15 border-l-4 border-[#ef4444] text-slate-200 text-xs">
+        <p class="font-bold text-[#ef4444] uppercase">DIAGNOSEMELDUNG: MIXED-CONTENT-BLOCKADE</p>
+        <p class="mt-1 text-slate-300">
+          Mixed-Content-Blockade: Browser blockiert lokale HTTP-Aufrufe. Bitte Seite lokal ueber HTTP ausfuehren oder im Browser 'Unsichere Inhalte' fuer diese Seite aktivieren.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. DYNAMISCHES SCHIEBEREGISTER -->
+    <section class="scada-panel p-4 sm:p-5 w-full">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#1e293b]">
+        <div>
+          <div class="flex items-center gap-2">
+            <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+              DYNAMISCHES SCHIEBEREGISTER (FIFO-BANDTRACKING)
+            </h2>
+            <span id="slots_count_badge" class="text-[10px] px-2 py-0.5 bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30">
+              3 STATIONEN
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Schrittmotor-Vorschub: 75.0 mm je Einzeltakt
+          </p>
+        </div>
+        <div class="text-xs text-slate-400">
+          Foerderrichtung: Station 0 --&gt; Station N
+        </div>
+      </div>
+
+      <div id="slots_container" class="grid gap-4 mt-4 tech-grid p-3 bg-[#050811] border border-[#1e293b]" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+        <!-- Wird dynamisch generiert -->
+      </div>
+    </section>
+
+    <!-- 3. TELEMETRIE & SENSOR DIAGNOSE -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- ZAEHLER -->
+      <section class="scada-panel p-4 sm:p-5 lg:col-span-6 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between pb-3 border-b border-[#1e293b]">
+            <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+              SORTIERZAEHLER &amp; DURCHSATZ
+            </h2>
+            <span class="text-[11px] text-slate-400">
+              GESAMT: <strong id="kpi_total_header" class="text-white">0</strong>
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3.5">
+            <div class="p-3 bg-[#070b14] border border-[#1e293b]">
+              <span class="text-[10px] text-slate-400 uppercase block">Gesamt</span>
+              <span id="kpi_total" class="text-xl font-bold text-white mt-1 block">0</span>
+            </div>
+            <div class="p-3 bg-[#170a0d] border border-[#ef4444]/40">
+              <span class="text-[10px] text-[#ef4444] uppercase block">Rot</span>
+              <span id="kpi_red" class="text-xl font-bold text-[#ef4444] mt-1 block">0</span>
+            </div>
+            <div class="p-3 bg-[#111622] border border-slate-400/40">
+              <span class="text-[10px] text-slate-200 uppercase block">Weiss</span>
+              <span id="kpi_white" class="text-xl font-bold text-white mt-1 block">0</span>
+            </div>
+            <div class="p-3 bg-[#1a140a] border border-amber-500/40">
+              <span class="text-[10px] text-amber-400 uppercase block">Ausschuss</span>
+              <span id="kpi_unknown" class="text-xl font-bold text-amber-400 mt-1 block">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-[#1e293b] flex flex-wrap items-center justify-between text-xs gap-2">
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400 uppercase">Schrittmotor-Treiber:</span>
+            <span id="driver_status_badge" class="px-2 py-0.5 font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700">
+              STANDBY (STROMLOS)
+            </span>
+          </div>
+          <div class="text-slate-400 text-[11px]">
+            Takt: <strong id="kpi_cycle_time" class="text-white">1500 ms</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- SENSOR DIAGNOSE -->
+      <section class="scada-panel p-4 sm:p-5 lg:col-span-6 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between pb-3 border-b border-[#1e293b]">
+            <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+              SENSOR-DIAGNOSE (TCS34725 RGB-C)
+            </h2>
+            <span id="sensor_detected_badge" class="px-2.5 py-0.5 text-xs font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700">
+              LEER
+            </span>
+          </div>
+
+          <div class="space-y-2.5 mt-3.5 text-xs">
+            <div>
+              <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                <span class="text-slate-400">Clear (C):</span>
+                <span id="sensor_val_c" class="font-bold text-white">0</span>
+              </div>
+              <div class="h-2 bg-slate-900 border border-[#1e293b]">
+                <div id="sensor_bar_c" class="h-full bg-slate-300 transition-all" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-[11px] text-[#ef4444] mb-1">
+                <span>Rot (R):</span>
+                <span id="sensor_val_r" class="font-bold">0</span>
+              </div>
+              <div class="h-2 bg-slate-900 border border-[#1e293b]">
+                <div id="sensor_bar_r" class="h-full bg-[#ef4444] transition-all" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-[11px] text-[#10b981] mb-1">
+                <span>Gruen (G):</span>
+                <span id="sensor_val_g" class="font-bold">0</span>
+              </div>
+              <div class="h-2 bg-slate-900 border border-[#1e293b]">
+                <div id="sensor_bar_g" class="h-full bg-[#10b981] transition-all" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-[11px] text-[#38bdf8] mb-1">
+                <span>Blau (B):</span>
+                <span id="sensor_val_b" class="font-bold">0</span>
+              </div>
+              <div class="h-2 bg-slate-900 border border-[#1e293b]">
+                <div id="sensor_bar_b" class="h-full bg-[#38bdf8] transition-all" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-[#1e293b] flex items-center justify-between text-xs">
+          <span class="text-slate-400">Fehler: <strong id="telemetry_error_msg" class="text-slate-300 font-normal">Kein Fehler</strong></span>
+          <span class="text-[10px] text-slate-500">I2C: 0x29</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- 4. BEDIENTASTEN -->
+    <section class="scada-panel p-4 sm:p-5 w-full">
+      <div class="pb-3 border-b border-[#1e293b] flex justify-between items-center">
+        <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+          BEDIENTASTEN &amp; AKTOR-STEUERUNG
+        </h2>
+        <span id="status_mode_badge" class="px-2.5 py-0.5 text-xs font-bold uppercase bg-slate-800 text-slate-300 border border-slate-700">
+          STANDBY
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
+        <!-- START -->
+        <button 
+          type="button" 
+          id="btn_cmd_start" 
+          onclick="sendScadaCommand('START')"
+          class="p-4 border border-[#10b981] bg-[#10b981]/15 hover:bg-[#10b981]/25 text-[#10b981] text-left cursor-pointer transition-all"
+        >
+          <div class="text-[10px] text-slate-400">cmd=START</div>
+          <div class="text-sm font-bold text-white my-1">ANLAGE START</div>
+          <div class="text-[10px] text-slate-400">Automatik-Betrieb takten</div>
+        </button>
+
+        <!-- NOT-HALT -->
+        <button 
+          type="button" 
+          id="btn_cmd_stop" 
+          onclick="sendScadaCommand('STOP')"
+          class="p-4 border border-[#ef4444] bg-[#ef4444]/20 hover:bg-[#ef4444]/35 text-[#ef4444] text-left cursor-pointer transition-all"
+        >
+          <div class="text-[10px] text-[#ef4444]">cmd=STOP</div>
+          <div class="text-sm font-bold text-white my-1">NOT-HALT / STOPP</div>
+          <div class="text-[10px] text-slate-300">Sofortiger Bandstopp</div>
+        </button>
+
+        <!-- EINZELTAKT -->
+        <button 
+          type="button" 
+          id="btn_cmd_step" 
+          onclick="sendScadaCommand('STEP')"
+          class="p-4 border border-[#38bdf8] bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] text-left cursor-pointer transition-all"
+        >
+          <div class="text-[10px] text-slate-400">cmd=STEP</div>
+          <div class="text-sm font-bold text-white my-1">EINZELTAKT (75mm)</div>
+          <div class="text-[10px] text-slate-400">Vorschub um genau 1 Slot</div>
+        </button>
+
+        <!-- AUSWURF ROT -->
+        <button 
+          type="button" 
+          id="btn_cmd_eject_red" 
+          onclick="sendScadaCommand('TRIGGER_EJECTOR', { target: 'RED' })"
+          class="p-4 border border-[#ef4444]/50 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 text-[#ef4444] text-left cursor-pointer transition-all"
+        >
+          <div class="text-[10px] text-slate-400">cmd=TRIGGER_EJECTOR&amp;target=RED</div>
+          <div class="text-sm font-bold text-white my-1">AUSWURF ROT TEST</div>
+          <div class="text-[10px] text-slate-400">Station 1: Servo Rot</div>
+        </button>
+
+        <!-- AUSWURF WEISS -->
+        <button 
+          type="button" 
+          id="btn_cmd_eject_white" 
+          onclick="sendScadaCommand('TRIGGER_EJECTOR', { target: 'WHITE' })"
+          class="p-4 border border-slate-400 bg-white/5 hover:bg-white/10 text-slate-200 text-left cursor-pointer transition-all"
+        >
+          <div class="text-[10px] text-slate-400">cmd=TRIGGER_EJECTOR&amp;target=WHITE</div>
+          <div class="text-sm font-bold text-white my-1">AUSWURF WEISS TEST</div>
+          <div class="text-[10px] text-slate-400">Station 2: Servo Weiss</div>
+        </button>
+
+        <!-- RESET STATS -->
+        <button 
+          type="button" 
+          id="btn_cmd_reset_stats" 
+          onclick="sendScadaCommand('RESET_STATS')"
+          class="p-4 border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-left cursor-pointer transition-all"
+        >
+          <div class="text-[10px] text-slate-400">cmd=RESET_STATS</div>
+          <div class="text-sm font-bold text-white my-1">ZAEHLER ZURUECKSETZEN</div>
+          <div class="text-[10px] text-slate-400">Statistik-Zaehler auf 0</div>
+        </button>
+      </div>
+
+      <!-- TAKTZEIT -->
+      <form id="cycle_time_form" onsubmit="handleCycleTimeSubmit(event)" class="mt-4 pt-4 border-t border-[#1e293b] grid grid-cols-1 sm:grid-cols-12 gap-3 items-center text-xs">
+        <div class="sm:col-span-4">
+          <label class="block font-bold text-white uppercase mb-0.5">
+            TAKTZEIT: <span id="lbl_cycle_time">1500</span> ms
+          </label>
+          <p class="text-[10px] text-slate-400">Bereich: 500 bis 5000 ms</p>
+        </div>
+        <div class="sm:col-span-5 flex items-center gap-2">
+          <span class="text-[10px] text-slate-500">500</span>
+          <input 
+            type="range" 
+            id="input_cycle_range" 
+            min="500" 
+            max="5000" 
+            step="50" 
+            value="1500" 
+            oninput="document.getElementById('lbl_cycle_time').innerText = this.value; document.getElementById('input_cycle_num').value = this.value;"
+            class="w-full accent-[#10b981]"
+          >
+          <span class="text-[10px] text-slate-500">5000</span>
+        </div>
+        <div class="sm:col-span-3 flex items-center gap-2">
+          <input 
+            type="number" 
+            id="input_cycle_num" 
+            min="500" 
+            max="5000" 
+            step="50" 
+            value="1500" 
+            oninput="document.getElementById('lbl_cycle_time').innerText = this.value; document.getElementById('input_cycle_range').value = this.value;"
+            class="w-20 bg-[#070b14] border border-[#1e293b] text-white px-2 py-2 text-xs outline-none"
+          >
+          <button 
+            type="submit" 
+            class="flex-1 py-2 bg-[#10b981] hover:bg-[#059669] text-black font-bold uppercase cursor-pointer"
+          >
+            SETZEN
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 5. AUDIT LOG -->
+    <section class="scada-panel w-full flex flex-col text-xs">
+      <div class="p-3 bg-[#090d16] border-b border-[#1e293b] flex flex-wrap items-center justify-between gap-3">
+        <h3 class="font-bold text-white uppercase tracking-wider">
+          SCADA-SYSTEMPROTOKOLL &amp; AUDIT-LOG
+        </h3>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="copyLogToClipboard()" class="px-2.5 py-1 bg-[#0b1120] border border-[#1e293b] text-slate-300 hover:bg-[#1e293b] cursor-pointer">
+            KOPIEREN
+          </button>
+          <button type="button" onclick="downloadLogFile()" class="px-2.5 py-1 bg-[#0b1120] border border-[#1e293b] text-slate-300 hover:bg-[#1e293b] cursor-pointer">
+            EXPORT .LOG
+          </button>
+          <button type="button" onclick="clearSystemLog()" class="px-2.5 py-1 bg-[#0b1120] border border-[#1e293b] text-slate-400 hover:text-red-400 cursor-pointer">
+            LEEREN
+          </button>
+        </div>
+      </div>
+      <div id="log_console" class="p-3 bg-[#050811] min-h-[160px] max-h-[260px] overflow-y-auto space-y-1 select-text">
+        <!-- Log Eintraege -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- JAVASCRIPT LOGIC (VANILLA ES6+) -->
+  <script>
+    // Konfigurationsschluessel
+    const STORAGE_KEY = 'NWT2026_SCADA_CONFIG';
+
+    // Standardkonfiguration gemaess Anforderung
+    let scadaConfig = {
+      host: 'http://192.168.4.1',
+      key: 'NWT-2026-SORT-X79',
+      pollingMs: 500,
+    };
+
+    // Gespeicherte Konfiguration laden
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.host) scadaConfig.host = parsed.host;
+        if (parsed.key) scadaConfig.key = parsed.key;
+      }
+    } catch (e) {
+      console.warn('Konfiguration konnte nicht geladen werden', e);
+    }
+
+    // Telemetrie Zustand
+    let telemetryData = {
+      running: false,
+      status: 'STANDBY',
+      error: 'Kein Fehler',
+      cycle_ms: 1500,
+      slots: [0, 0, 0],
+      stats: { total: 0, red: 0, white: 0, unknown: 0 },
+      sensor: { detected: 'LEER', r: 0, g: 0, b: 0, c: 0 }
+    };
+
+    let connectionState = 'GETRENNT'; // GETRENNT, VERBINDE..., ONLINE, FEHLER
+    let consecutiveErrors = 0;
+    let isRequestBusy = false;
+    let engineTimer = null;
+    let logs = [];
+
+    const stationConfigs = [
+      { name: 'Station 0: Farbsensor TCS34725', desc: 'Optische Farberkennung RGB-C', hw: 'TCS34725 I2C', dist: 0 },
+      { name: 'Station 1: Auswurf Rot', desc: 'Servo-Ausschleusung Rot', hw: 'SG90 Servo 1', dist: 75 },
+      { name: 'Station 2: Auswurf Weiss', desc: 'Servo-Ausschleusung Weiss', hw: 'SG90 Servo 2', dist: 150 }
+    ];
+
+    function addLog(type, message, latency) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('de-DE', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0');
+      logs.unshift({ time: timeStr, type, message, latency });
+      if (logs.length > 200) logs.pop();
+      renderLogConsole();
+    }
+
+    function renderLogConsole() {
+      const consoleEl = document.getElementById('log_console');
+      if (!consoleEl) return;
+      consoleEl.innerHTML = logs.map(l => {
+        let tagColor = 'bg-slate-800 text-slate-300';
+        let msgColor = 'text-slate-300';
+        if (l.type === 'ERROR') { tagColor = 'bg-[#ef4444]/20 text-[#ef4444] border border-[#ef4444]/40'; msgColor = 'text-red-300'; }
+        if (l.type === 'WARN') { tagColor = 'bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/40'; msgColor = 'text-amber-200'; }
+        if (l.type === 'CMD') { tagColor = 'bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/40'; msgColor = 'text-emerald-200'; }
+        return `
+          <div class="flex items-start gap-2 text-[11px] hover:bg-white/[0.02] px-2 py-0.5 border-b border-white/[0.02]">
+            <span class="text-slate-500 shrink-0">[${l.time}]</span>
+            <span class="px-1.5 text-[9px] font-bold uppercase shrink-0 ${tagColor}">${l.type}</span>
+            <span class="flex-1 break-all ${msgColor}">${l.message}</span>
+            ${l.latency !== undefined ? `<span class="text-[10px] text-slate-500">${l.latency}ms</span>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function clearSystemLog() {
+      logs = [];
+      renderLogConsole();
+    }
+
+    function copyLogToClipboard() {
+      const text = logs.map(l => `[${l.time}] [${l.type}] ${l.message}`).join('\n');
+      navigator.clipboard.writeText(text);
+      alert('Protokoll in Zwischenablage kopiert');
+    }
+
+    function downloadLogFile() {
+      const text = logs.map(l => `[${l.time}] [${l.type}] ${l.message}`).join('\n');
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `scada_esp32_${Date.now()}.log`;
+      a.click();
+    }
+
+    function setPresetUrl(url) {
+      document.getElementById('cfg_host').value = url;
+      scadaConfig.host = url;
+      saveCurrentConfig();
+    }
+
+    function saveCurrentConfig() {
+      scadaConfig.host = document.getElementById('cfg_host').value.trim();
+      scadaConfig.key = document.getElementById('cfg_key').value.trim();
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(scadaConfig));
+      } catch (e) {}
+      consecutiveErrors = 0;
+      setConnectionStatus('VERBINDE...');
+      addLog('SYS', 'Konfiguration aktualisiert: ' + scadaConfig.host);
+      sendApiRequest('GET_STATUS');
+    }
+
+    function setConnectionStatus(status, latency) {
+      connectionState = status;
+      const connBadge = document.getElementById('connection_badge');
+      const headerBadge = document.getElementById('header_status_badge');
+      const latBadge = document.getElementById('header_latency_badge');
+
+      if (latency !== undefined) {
+        latBadge.innerText = latency + ' ms RTT';
+      }
+
+      if (status === 'ONLINE') {
+        connBadge.className = 'px-3 py-1 text-xs font-bold uppercase tracking-wider bg-[#10b981]/15 border border-[#10b981] text-[#10b981]';
+        connBadge.innerText = 'STATUS: ONLINE';
+        headerBadge.className = 'px-3 py-1 bg-[#10b981]/15 border border-[#10b981] text-[#10b981] font-bold uppercase tracking-wider';
+        headerBadge.innerText = 'ONLINE (' + (telemetryData.status || 'BEREIT') + ')';
+      } else if (status === 'VERBINDE...') {
+        connBadge.className = 'px-3 py-1 text-xs font-bold uppercase tracking-wider bg-[#f59e0b]/15 border border-[#f59e0b] text-[#f59e0b]';
+        connBadge.innerText = 'STATUS: VERBINDE...';
+        headerBadge.className = 'px-3 py-1 bg-[#f59e0b]/15 border border-[#f59e0b] text-[#f59e0b] font-bold uppercase tracking-wider';
+        headerBadge.innerText = 'VERBINDE...';
+      } else if (status === 'FEHLER') {
+        connBadge.className = 'px-3 py-1 text-xs font-bold uppercase tracking-wider bg-[#ef4444]/15 border border-[#ef4444] text-[#ef4444]';
+        connBadge.innerText = 'STATUS: FEHLER';
+        headerBadge.className = 'px-3 py-1 bg-[#ef4444]/15 border border-[#ef4444] text-[#ef4444] font-bold uppercase tracking-wider';
+        headerBadge.innerText = 'FEHLER / GETRENNT';
+      } else {
+        connBadge.className = 'px-3 py-1 text-xs font-bold uppercase tracking-wider bg-slate-800 border border-slate-600 text-slate-400';
+        connBadge.innerText = 'STATUS: GETRENNT';
+        headerBadge.className = 'px-3 py-1 bg-slate-800 border border-slate-600 text-slate-300 font-bold uppercase tracking-wider';
+        headerBadge.innerText = 'GETRENNT';
+      }
+    }
+
+    async function sendApiRequest(cmd, params = {}, isManual = false) {
+      let base = scadaConfig.host.trim();
+      if (base.endsWith('/')) base = base.slice(0, -1);
+
+      const q = new URLSearchParams();
+      q.set('key', scadaConfig.key.trim());
+      q.set('cmd', cmd);
+      for (const [k, v] of Object.entries(params)) {
+        q.set(k, String(v));
+      }
+
+      const url = base + '/api?' + q.toString();
+      const startTime = performance.now();
+
+      const isHttps = window.location.protocol === 'https:';
+      const isHttpTarget = base.toLowerCase().startsWith('http://');
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json', 'X-API-Key': scadaConfig.key.trim() },
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        const roundTrip = Math.round(performance.now() - startTime);
+
+        if (res.status === 401) {
+          consecutiveErrors++;
+          setConnectionStatus('FEHLER', roundTrip);
+          addLog('ERROR', 'ESP32 Authentifizierung fehlgeschlagen: Ungueltiger Key', roundTrip);
+          return false;
+        }
+
+        if (!res.ok) throw new Error('HTTP Status ' + res.status);
+
+        const data = await res.json();
+        consecutiveErrors = 0;
+        document.getElementById('mixed_content_box').classList.add('hidden');
+        telemetryData = data;
+        setConnectionStatus('ONLINE', roundTrip);
+        updateUiFromTelemetry();
+
+        if (isManual) {
+          addLog('CMD', `Befehl '${cmd}' erfolgreich. Status: ${data.status}`, roundTrip);
+        }
+        return true;
+      } catch (err) {
+        const roundTrip = Math.round(performance.now() - startTime);
+        consecutiveErrors++;
+
+        if (isHttps && isHttpTarget) {
+          document.getElementById('mixed_content_box').classList.remove('hidden');
+        }
+
+        if (consecutiveErrors >= 2) {
+          setConnectionStatus('FEHLER');
+        }
+
+        const msg = err.message || 'Verbindungsfehler';
+        if (isManual) {
+          addLog('ERROR', `Fehler bei Befehl '${cmd}': ${msg}`, roundTrip);
+        } else if (consecutiveErrors === 2) {
+          addLog('WARN', `Verbindung zu ESP32 unterbrochen (${msg}) @ ${scadaConfig.host}`, roundTrip);
+        }
+        return false;
+      }
+    }
+
+    function updateUiFromTelemetry() {
+      // 1. Zaehler
+      document.getElementById('kpi_total').innerText = telemetryData.stats.total;
+      document.getElementById('kpi_total_header').innerText = telemetryData.stats.total;
+      document.getElementById('kpi_red').innerText = telemetryData.stats.red;
+      document.getElementById('kpi_white').innerText = telemetryData.stats.white;
+      document.getElementById('kpi_unknown').innerText = telemetryData.stats.unknown;
+
+      // 2. Treiber Status
+      const driverBadge = document.getElementById('driver_status_badge');
+      if (telemetryData.running) {
+        driverBadge.className = 'px-2 py-0.5 font-bold uppercase bg-[#10b981]/20 text-[#10b981] border border-[#10b981]';
+        driverBadge.innerText = 'AKTIV (BESTROMT / TAKTEND)';
+      } else {
+        driverBadge.className = 'px-2 py-0.5 font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700';
+        driverBadge.innerText = 'STANDBY (STROMLOS / RUHE)';
+      }
+
+      // 3. Modus & Takt
+      document.getElementById('status_mode_badge').innerText = telemetryData.status;
+      document.getElementById('kpi_cycle_time').innerText = telemetryData.cycle_ms + ' ms';
+      document.getElementById('telemetry_error_msg').innerText = telemetryData.error || 'Kein Fehler';
+
+      // 4. Sensor Rohwerte
+      const s = telemetryData.sensor;
+      document.getElementById('sensor_val_c').innerText = s.c;
+      document.getElementById('sensor_val_r').innerText = s.r;
+      document.getElementById('sensor_val_g').innerText = s.g;
+      document.getElementById('sensor_val_b').innerText = s.b;
+
+      const maxC = Math.max(s.r, s.g, s.b, 1);
+      document.getElementById('sensor_bar_c').style.width = Math.min(100, Math.round((s.c / 5000) * 100)) + '%';
+      document.getElementById('sensor_bar_r').style.width = Math.min(100, Math.round((s.r / maxC) * 100)) + '%';
+      document.getElementById('sensor_bar_g').style.width = Math.min(100, Math.round((s.g / maxC) * 100)) + '%';
+      document.getElementById('sensor_bar_b').style.width = Math.min(100, Math.round((s.b / maxC) * 100)) + '%';
+
+      const sBadge = document.getElementById('sensor_detected_badge');
+      sBadge.innerText = s.detected;
+      if (s.detected === 'ROT') {
+        sBadge.className = 'px-2.5 py-0.5 text-xs font-bold uppercase bg-[#ef4444]/25 text-[#ef4444] border border-[#ef4444]';
+      } else if (s.detected === 'WEISS') {
+        sBadge.className = 'px-2.5 py-0.5 text-xs font-bold uppercase bg-white/20 text-white border border-white';
+      } else if (s.detected === 'UNBEKANNT') {
+        sBadge.className = 'px-2.5 py-0.5 text-xs font-bold uppercase bg-amber-500/25 text-amber-300 border border-amber-500';
+      } else {
+        sBadge.className = 'px-2.5 py-0.5 text-xs font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700';
+      }
+
+      // 5. Dynamisches Schieberegister
+      renderConveyorSlots(telemetryData.slots);
+    }
+
+    function renderConveyorSlots(slots) {
+      const container = document.getElementById('slots_container');
+      const badge = document.getElementById('slots_count_badge');
+      if (!container || !Array.isArray(slots)) return;
+
+      badge.innerText = slots.length + ' STATIONEN';
+
+      container.innerHTML = slots.map((val, idx) => {
+        const st = idx < stationConfigs.length ? stationConfigs[idx] : {
+          name: 'Station ' + idx + ': Folge-Aktor',
+          desc: 'Zusaetzliche Auswurf- / Pruefstation',
+          hw: 'Modul ' + idx,
+          dist: idx * 75
+        };
+
+        let ballHtml = '';
+        let containerBorder = 'border-[#1e293b] bg-[#070b14]';
+
+        if (val === 1) { // ROT
+          containerBorder = 'border-[#ef4444] bg-[#1a0f12]';
+          ballHtml = `
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-14 h-14 rounded-full border-2 border-[#ff4444] shadow-[0_0_20px_rgba(255,0,0,0.6)] flex items-center justify-center font-bold text-white text-xs" style="background-color: #ff0000;">
+                ROT
+              </div>
+              <span class="px-2 py-0.5 bg-[#ef4444]/20 border border-[#ef4444] text-[#ef4444] text-[11px] font-bold">1: ROT</span>
+            </div>
+          `;
+        } else if (val === 2) { // WEISS
+          containerBorder = 'border-white bg-[#141822]';
+          ballHtml = `
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-14 h-14 rounded-full bg-white border-2 border-slate-300 shadow-[0_0_22px_rgba(255,255,255,0.7)] flex items-center justify-center font-bold text-slate-800 text-xs">
+                WEISS
+              </div>
+              <span class="px-2 py-0.5 bg-white/20 border border-white text-white text-[11px] font-bold">2: WEISS</span>
+            </div>
+          `;
+        } else if (val === 99) { // FEHLER / UNBEKANNT
+          containerBorder = 'border-amber-400 bg-[#1c160f]';
+          ballHtml = `
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-14 h-14 rounded-full border-2 border-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.6)] slot-striped flex items-center justify-center font-bold text-black text-xs">
+                99
+              </div>
+              <span class="px-2 py-0.5 bg-amber-500/20 border border-amber-500 text-amber-300 text-[11px] font-bold">99: FEHLER</span>
+            </div>
+          `;
+        } else { // LEER
+          ballHtml = `
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-14 h-14 rounded-full border-2 border-dashed border-slate-700 bg-slate-900/60 flex items-center justify-center">
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-800"></span>
+              </div>
+              <span class="px-2 py-0.5 bg-slate-900 border border-slate-800 text-slate-500 text-[11px] font-semibold">0: LEER</span>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="p-4 border transition-all flex flex-col justify-between min-h-[240px] ${containerBorder}">
+            <div class="border-b border-white/10 pb-2 flex justify-between items-start">
+              <div>
+                <span class="text-xs font-bold text-slate-200">POS ${idx}: ${st.name}</span>
+                <p class="text-[10px] text-slate-400 mt-0.5">${st.desc}</p>
+              </div>
+              <span class="text-[10px] bg-black/60 px-1.5 py-0.5 border border-slate-800">+${st.dist} mm</span>
+            </div>
+
+            <div class="py-6 flex items-center justify-center">
+              ${ballHtml}
+            </div>
+
+            <div class="pt-2 border-t border-white/10 flex justify-between text-[10px] text-slate-400">
+              <span>${st.hw}</span>
+              <span>SLOT: <strong class="text-white">${val}</strong></span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function sendScadaCommand(cmd, params = {}) {
+      sendApiRequest(cmd, params, true);
+    }
+
+    function handleCycleTimeSubmit(e) {
+      e.preventDefault();
+      const val = parseInt(document.getElementById('input_cycle_num').value, 10);
+      if (val >= 500 && val <= 5000) {
+        sendScadaCommand('SET_CYCLE_TIME', { value: val });
+      }
+    }
+
+    // Polling Schleife
+    async function scadaPollingEngine() {
+      if (!isRequestBusy) {
+        isRequestBusy = true;
+        await sendApiRequest('GET_STATUS', {}, false);
+        isRequestBusy = false;
+      }
+
+      let delay = 3000;
+      if (connectionState === 'ONLINE') {
+        const dyn = telemetryData.cycle_ms ? Math.floor(telemetryData.cycle_ms / 2) : 500;
+        delay = Math.max(250, Math.min(1000, dyn));
+      }
+
+      engineTimer = setTimeout(scadaPollingEngine, delay);
+    }
+
+    // Initialisierung
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('cfg_host').value = scadaConfig.host;
+      document.getElementById('cfg_key').value = scadaConfig.key;
+
+      document.getElementById('connection_form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveCurrentConfig();
+      });
+
+      document.getElementById('btn_reconnect').addEventListener('click', () => {
+        saveCurrentConfig();
+      });
+
+      addLog('SYS', 'Standalone SCADA Leitstand bereit. Ziel: ' + scadaConfig.host);
+      renderConveyorSlots([0, 0, 0]);
+      setConnectionStatus('VERBINDE...');
+      scadaPollingEngine();
+    });
+  </script>
+</body>
+</html>

@@ -1,13 +1,14 @@
 // ======================================================================
 // SCADA & MECHATRONIK KONTRAKT - ESP32 TISCHTENNISBALL FARBSORTIERANLAGE
+// NWT-Jahresarbeit 2026 - Entwickler: Jacob Glathe
 // ======================================================================
 
-// 0 = LEER, 1 = ROT, 2 = WEISS, 99 = UNBEKANNT
-export type SlotBall = 0 | 1 | 2 | 99;
+// 0 = LEER, 1 = ROT, 2 = WEISS, 99 = FEHLER / UNBEKANNT
+export type SlotBall = number;
 
-export type SystemStatusText = 'AUTOMATIK' | 'GESTOPPT' | 'STANDBY';
+export type SystemStatusText = 'AUTOMATIK' | 'GESTOPPT' | 'STANDBY' | string;
 
-export type SensorDetected = 'LEER' | 'ROT' | 'WEISS' | 'UNBEKANNT' | 'SENSOR_FEHLT';
+export type SensorDetected = 'LEER' | 'ROT' | 'WEISS' | 'UNBEKANNT' | 'SENSOR_FEHLT' | string;
 
 export interface Esp32SensorData {
   detected: SensorDetected;
@@ -24,28 +25,24 @@ export interface Esp32Stats {
   unknown: number;
 }
 
-// Exakte JSON-Antwortstruktur des ESP32 gemäß Spezifikation
+// Exakte JSON-Telemetriestruktur vom ESP32
+// Modulare FIFO-Schieberegister-Definition (Array beliebiger Laenge N)
 export interface Esp32TelemetryResponse {
   running: boolean;
   status: SystemStatusText;
   error: string;
   cycle_ms: number;
-  slots: [SlotBall, SlotBall, SlotBall]; // Index 0: Sensor, Index 1: Auswurf Rot, Index 2: Auswurf Weiss
+  slots: SlotBall[];
   stats: Esp32Stats;
   sensor: Esp32SensorData;
 }
 
-export interface Esp32AuthError {
-  error: string;
-}
-
-export type ClientConnectionStatus = 'ONLINE' | 'STANDBY' | 'OFFLINE' | 'AUTH_ERROR';
+export type ClientConnectionStatus = 'GETRENNT' | 'VERBINDE...' | 'ONLINE' | 'FEHLER';
 
 export interface Esp32Config {
   baseUrl: string;
   apiKey: string;
   pollingIntervalMs: number;
-  useProxyFallback: boolean;
 }
 
 export interface ScadaLogItem {
@@ -54,4 +51,13 @@ export interface ScadaLogItem {
   type: 'CMD' | 'TELEMETRY' | 'ERROR' | 'WARN' | 'SYS';
   message: string;
   latencyMs?: number;
+}
+
+// Modulare Konfigurationstabelle fuer die Stationen des Foerderbands
+export interface StationConfig {
+  index: number;
+  name: string;
+  description: string;
+  hardware: string;
+  distanceMm: number;
 }

@@ -17,6 +17,7 @@ export default function App() {
     mixedContentWarning,
     updateConfig,
     executeCommand,
+    configureWifi,
     logs,
     clearLogs,
     triggerReconnectNow,
@@ -24,7 +25,6 @@ export default function App() {
 
   return (
     <div id="scada_app_root" className="min-h-screen bg-[#06080d] text-[#e2e8f0] font-mono flex flex-col antialiased">
-      {/* OBERE KOPFLEISTE */}
       <header id="scada_top_header" className="scada-header-bar sticky top-0 z-40 w-full px-4 py-3 bg-[#090d16] border-b border-[#1e293b]">
         <div className="max-w-[1680px] mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -56,7 +56,7 @@ export default function App() {
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1 px-2.5 py-1 bg-[#1e293b] hover:bg-[#334155] border border-slate-700 text-slate-200 text-xs transition-colors cursor-pointer"
-              title="Reine Standalone Single-File Version öffnen"
+              title="Reine Standalone Single-File Version oeffnen"
             >
               <FileCode className="w-3.5 h-3.5 text-sky-400" />
               <span>STANDALONE HTML EXPORT</span>
@@ -65,10 +65,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* HAUPT-LEITSTAND VIEWPORT */}
       <main id="scada_main_viewport" className="flex-1 max-w-[1680px] w-full mx-auto px-3 sm:px-5 py-5 flex flex-col gap-5">
-        
-        {/* 1. DYNAMISCHE VERBINDUNGSVERWALTUNG (CONNECTION MANAGER) */}
         <ConnectionManager
           connectionStatus={connectionStatus}
           latencyMs={latencyMs}
@@ -77,25 +74,22 @@ export default function App() {
           mixedContentWarning={mixedContentWarning}
           onUpdateConfig={updateConfig}
           onReconnect={triggerReconnectNow}
+          onConfigureWifi={configureWifi}
         />
 
-        {/* 2. DYNAMISCHES SCHIEBEREGISTER (FIFO-TRACKING VISUALISIERUNG) */}
         <ConveyorShiftRegister telemetry={telemetry} />
 
-        {/* 3. LIVE-TELEMETRIE & SENSOR-DIAGNOSE */}
         <TelemetryKpis
           telemetry={telemetry}
           connectionStatus={connectionStatus}
         />
 
-        {/* 4. ECHTE BEDIENTASTEN (VERIFIZIERTE HARDWARE) */}
         <ControlDeck
           telemetry={telemetry}
           connectionStatus={connectionStatus}
           onExecute={executeCommand}
         />
 
-        {/* 5. SYSTEMPROTOKOLL & AUDIT-LOG */}
         <EventLogConsole
           logs={logs}
           connectionStatus={connectionStatus}
@@ -103,10 +97,8 @@ export default function App() {
           onClearLogs={clearLogs}
           onRetryConnection={triggerReconnectNow}
         />
-
       </main>
 
-      {/* STATUS-FUSSZEILE */}
       <footer id="scada_footer_bar" className="border-t border-[#1e293b] bg-[#090d16] py-2.5 px-4 text-xs font-mono text-slate-400 flex flex-col sm:flex-row justify-between items-center gap-2">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="font-bold text-white uppercase">NWT-2026 JAHRESARBEIT</span>

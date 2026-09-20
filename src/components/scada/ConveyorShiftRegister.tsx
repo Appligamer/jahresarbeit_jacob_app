@@ -3,9 +3,7 @@ import {
   ArrowRight, 
   Disc, 
   AlertTriangle, 
-  MoveRight,
-  Cpu,
-  Layers
+  MoveRight
 } from 'lucide-react';
 import type { Esp32TelemetryResponse, SlotBall, StationConfig } from '../../types/scada.ts';
 
@@ -13,8 +11,6 @@ interface ConveyorShiftRegisterProps {
   telemetry: Esp32TelemetryResponse;
 }
 
-// Modulare Konfigurationstabelle fuer die Stationen der Farbsortieranlage
-// Kann ohne Redesign des Dashboards beliebig erweitert werden
 const DEFAULT_STATIONS: StationConfig[] = [
   {
     index: 0,
@@ -25,27 +21,25 @@ const DEFAULT_STATIONS: StationConfig[] = [
   },
   {
     index: 1,
-    name: 'Station 1: Auswurf Rot',
-    description: 'Servo-Ausschleusung Rot',
-    hardware: 'SG90 PWM Servo 1 (Station 1)',
+    name: 'Station 1: Linear-Stößel Rot (GPIO 13)',
+    description: 'Ausschleusung Rot (18mm Hubloch)',
+    hardware: 'Elektromagnetischer Hubstößel (GPIO 13)',
     distanceMm: 75,
   },
   {
     index: 2,
-    name: 'Station 2: Auswurf Weiss',
-    description: 'Servo-Ausschleusung Weiss',
-    hardware: 'SG90 PWM Servo 2 (Station 2)',
+    name: 'Station 2: Linear-Stößel Weiß (GPIO 14)',
+    description: 'Ausschleusung Weiß (18mm Hubloch)',
+    hardware: 'Elektromagnetischer Hubstößel (GPIO 14)',
     distanceMm: 150,
   },
 ];
 
 export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ telemetry }) => {
-  // Dynamische Slot-Laenge aus den empfangenen Telemetriedaten
   const slots: SlotBall[] = Array.isArray(telemetry.slots) && telemetry.slots.length > 0 
     ? telemetry.slots 
     : [0, 0, 0];
 
-  // Erhalte Stationen dynamisch
   const getStationConfig = (index: number): StationConfig => {
     if (index < DEFAULT_STATIONS.length) {
       return DEFAULT_STATIONS[index];
@@ -54,20 +48,14 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
       index,
       name: `Station ${index}: Folge-Aktor`,
       description: 'Zusaetzliche Auswurf- / Pruefstation',
-      hardware: `Servo / Sensor Modul ${index}`,
+      hardware: `Linear-Aktor Modul ${index}`,
       distanceMm: index * 75,
     };
   };
 
-  // Rendering des Kugel-Zustands gemaess Spezifikation:
-  // 0: Grau/Dunkel (LEER)
-  // 1: Reines Signalrot (ROT)
-  // 2: Weiss mit Kontur (WEISS)
-  // 99: Warn-Gelb/Magenta gestreift (FEHLER/UNBEKANNT)
   const renderSlotBall = (ballState: SlotBall) => {
     switch (ballState) {
       case 1:
-        // Reines Signalrot
         return (
           <div className="flex flex-col items-center justify-center gap-3">
             <div className="relative flex items-center justify-center">
@@ -91,7 +79,6 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
         );
 
       case 2:
-        // Weiss mit Kontur
         return (
           <div className="flex flex-col items-center justify-center gap-3">
             <div className="relative flex items-center justify-center">
@@ -114,7 +101,6 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
         );
 
       case 99:
-        // Warn-Gelb/Magenta gestreift (FEHLER/UNBEKANNT)
         return (
           <div className="flex flex-col items-center justify-center gap-3">
             <div className="relative flex items-center justify-center">
@@ -141,7 +127,6 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
 
       case 0:
       default:
-        // Grau/Dunkel (LEER)
         return (
           <div className="flex flex-col items-center justify-center gap-3">
             <div className="w-16 h-16 rounded-full border-2 border-dashed border-slate-700 bg-slate-900/60 flex items-center justify-center">
@@ -174,7 +159,6 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
 
   return (
     <section id="scada_conveyor_register" className="scada-panel p-4 sm:p-5 w-full">
-      {/* Kopfbereich */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#1e293b]">
         <div>
           <div className="flex items-center gap-2">
@@ -186,7 +170,7 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
             </span>
           </div>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Schrittmotor-getaktetes Schieberegister (75.0 mm Pitch je Einzeltakt)
+            Schrittmotor-getaktetes Schieberegister (75.0 mm Pitch / 3000 Schritte je Einzeltakt)
           </p>
         </div>
 
@@ -204,7 +188,6 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
         </div>
       </div>
 
-      {/* Dynamisches Grid anhand der Anzahl der Slots */}
       <div 
         className="grid gap-4 mt-4 tech-grid p-3 bg-[#050811] border border-[#1e293b]"
         style={{
@@ -219,7 +202,6 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
               id={`conveyor_station_slot_${idx}`}
               className={`p-4 border transition-all relative flex flex-col justify-between min-h-[260px] ${getContainerClass(slotState)}`}
             >
-              {/* Station Header */}
               <div className="flex items-start justify-between gap-2 border-b border-white/10 pb-2.5">
                 <div>
                   <div className="flex items-center gap-2">
@@ -240,12 +222,10 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
                 </span>
               </div>
 
-              {/* Kugelzustands-Anzeige */}
               <div className="py-6 flex items-center justify-center">
                 {renderSlotBall(slotState)}
               </div>
 
-              {/* Station Footer */}
               <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-slate-400">
                 <span className="truncate">{station.hardware}</span>
                 <span className="text-slate-400 uppercase font-mono">
@@ -253,7 +233,6 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
                 </span>
               </div>
 
-              {/* Pfeil zur naechsten Station */}
               {idx < slots.length - 1 && (
                 <div className="hidden lg:flex absolute -right-3.5 top-1/2 -translate-y-1/2 z-10 w-7 h-7 bg-[#0f172a] border border-[#334155] rounded-full items-center justify-center text-slate-300 shadow-md">
                   <ArrowRight className="w-4 h-4 text-[#10b981]" />
@@ -264,7 +243,6 @@ export const ConveyorShiftRegister: React.FC<ConveyorShiftRegisterProps> = ({ te
         })}
       </div>
 
-      {/* Slot-Array Debug-Leiste */}
       <div className="mt-3 pt-2.5 border-t border-[#1e293b] flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400 gap-2">
         <div className="flex items-center gap-2">
           <span className="text-slate-500">SCHIEBEREGISTER-DATEN:</span>

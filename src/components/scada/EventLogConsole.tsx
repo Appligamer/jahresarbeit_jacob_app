@@ -98,7 +98,7 @@ export const EventLogConsole: React.FC<EventLogConsoleProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
           {/* Filter Pills */}
           <div className="flex items-center bg-[#050811] border border-[#1e293b] p-0.5">
-            {(['ALL', 'CMD', 'ERROR', 'WARN', 'SYS'] as const).map((t) => (
+            {(['ALL', 'CMD', 'TELEMETRY', 'ERROR', 'WARN', 'SYS'] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -111,6 +111,8 @@ export const EventLogConsole: React.FC<EventLogConsoleProps> = ({
                       ? 'bg-[#f59e0b] text-black'
                       : t === 'CMD'
                       ? 'bg-[#10b981] text-black'
+                      : t === 'TELEMETRY'
+                      ? 'bg-sky-500 text-black'
                       : 'bg-slate-700 text-white'
                     : 'text-slate-400 hover:text-white'
                 }`}
@@ -191,6 +193,8 @@ export const EventLogConsole: React.FC<EventLogConsoleProps> = ({
                     ? 'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/40'
                     : item.type === 'CMD'
                     ? 'bg-[#10b981]/20 text-[#10b981] border-[#10b981]/40'
+                    : item.type === 'TELEMETRY'
+                    ? 'bg-sky-500/20 text-sky-400 border-sky-500/40'
                     : 'bg-slate-800 text-slate-300 border-slate-700'
                 }`}
               >
@@ -206,6 +210,8 @@ export const EventLogConsole: React.FC<EventLogConsoleProps> = ({
                     ? 'text-amber-200'
                     : item.type === 'CMD'
                     ? 'text-emerald-200 font-semibold'
+                    : item.type === 'TELEMETRY'
+                    ? 'text-sky-200'
                     : 'text-slate-300'
                 }`}
               >

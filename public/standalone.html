@@ -150,11 +150,11 @@
       <div class="mt-3 pt-2.5 border-t border-[#1e293b] flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-slate-500 uppercase">Presets:</span>
+          <button type="button" class="px-2 py-0.5 bg-[#0b1120] hover:bg-[#1e293b] border border-[#10b981]/50 text-[#10b981] font-bold cursor-pointer" onclick="setPresetUrl('http://192.168.2.95')">
+            Heim-WLAN (192.168.2.95)
+          </button>
           <button type="button" class="px-2 py-0.5 bg-[#0b1120] hover:bg-[#1e293b] border border-[#1e293b] text-slate-300 cursor-pointer" onclick="setPresetUrl('http://192.168.4.1')">
             AP-Mode (192.168.4.1)
-          </button>
-          <button type="button" class="px-2 py-0.5 bg-[#0b1120] hover:bg-[#1e293b] border border-[#1e293b] text-slate-300 cursor-pointer" onclick="setPresetUrl('http://192.168.178.50')">
-            WLAN (192.168.178.50)
           </button>
           <button type="button" class="px-2 py-0.5 bg-[#0b1120] hover:bg-[#1e293b] border border-[#1e293b] text-slate-300 cursor-pointer" onclick="setPresetUrl(window.location.origin)">
             Aktueller Host
@@ -365,8 +365,8 @@
           class="p-4 border border-[#ef4444]/50 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 text-[#ef4444] text-left cursor-pointer transition-all"
         >
           <div class="text-[10px] text-slate-400">cmd=TRIGGER_EJECTOR&amp;target=RED</div>
-          <div class="text-sm font-bold text-white my-1">AUSWURF ROT TEST</div>
-          <div class="text-[10px] text-slate-400">Station 1: Servo Rot</div>
+          <div class="text-sm font-bold text-white my-1">TEST STÖSSEL ROT</div>
+          <div class="text-[10px] text-slate-400">Station 1: Linear-Stößel Rot (GPIO 13)</div>
         </button>
 
         <!-- AUSWURF WEISS -->
@@ -377,8 +377,8 @@
           class="p-4 border border-slate-400 bg-white/5 hover:bg-white/10 text-slate-200 text-left cursor-pointer transition-all"
         >
           <div class="text-[10px] text-slate-400">cmd=TRIGGER_EJECTOR&amp;target=WHITE</div>
-          <div class="text-sm font-bold text-white my-1">AUSWURF WEISS TEST</div>
-          <div class="text-[10px] text-slate-400">Station 2: Servo Weiss</div>
+          <div class="text-sm font-bold text-white my-1">TEST STÖSSEL WEISS</div>
+          <div class="text-[10px] text-slate-400">Station 2: Linear-Stößel Weiß (GPIO 14)</div>
         </button>
 
         <!-- RESET STATS -->

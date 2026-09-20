@@ -242,6 +242,12 @@ async function startServer() {
         break;
       }
 
+      case 'SET_WIFI': {
+        const ssid = (req.query.ssid || req.body.ssid || '') as string;
+        console.log(`[ESP32 FIRMWARE MOCK] SET_WIFI empfangen: SSID='${ssid}' in NVS-Flash gesichert. Reboot simuliert.`);
+        break;
+      }
+
       default:
         // Return status on unknown
         break;

@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import { 
   Play, 
-  Square, 
   StepForward, 
   Sliders, 
   RotateCcw, 
   Target, 
   Check, 
-  AlertOctagon,
-  Settings2
+  AlertOctagon
 } from 'lucide-react';
 import type { Esp32TelemetryResponse, ClientConnectionStatus } from '../../types/scada.ts';
 
@@ -24,7 +22,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
   onExecute,
 }) => {
   const [cycleTimeInput, setCycleTimeInput] = useState<number>(telemetry.cycle_ms || 1500);
-  const [activeButton, setActiveButton] = useState<string | null>(null);
+  const [, setActiveButton] = useState<string | null>(null);
 
   const isOnline = connectionStatus === 'ONLINE';
   const isRunning = telemetry.running;
@@ -43,14 +41,13 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
 
   return (
     <section id="scada_control_deck" className="scada-panel p-4 sm:p-5 w-full">
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#1e293b]">
         <div>
           <h2 className="text-xs sm:text-sm font-bold text-white tracking-wider uppercase font-mono flex items-center gap-2">
-            <span>BEDIENTASTEN & AKTOR-STEUERUNG</span>
+            <span>BEDIENTASTEN &amp; AKTOR-STEUERUNG</span>
           </h2>
           <p className="text-[11px] text-slate-400 font-mono mt-0.5">
-            Verifizierte Hardware-Schnittstellen: NEMA 17 Schrittmotor + SG90 Servos
+            Verifizierte Mechatronik-Schnittstellen: NEMA 17 Schrittmotor + Vertikale Linear-Hubstoessel (18mm Hubloch)
           </p>
         </div>
 
@@ -64,9 +61,8 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
         </div>
       </div>
 
-      {/* Haupt-Bedienelemente */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4 font-mono">
-        {/* START-Button */}
+        {/* START */}
         <button
           type="button"
           id="btn_cmd_start"
@@ -91,7 +87,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
           </div>
         </button>
 
-        {/* NOT-HALT / STOPP Button */}
+        {/* STOP */}
         <button
           type="button"
           id="btn_cmd_stop"
@@ -107,11 +103,11 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
             <div className="text-[10px] text-slate-300 mt-0.5">Sofortiger Bandstopp</div>
           </div>
           <div className="text-[9px] text-[#ef4444]/80 text-left">
-            Setzt running=false & schaltet Treiber ab
+            Setzt running=false &amp; schaltet Schrittmotor-Treiber ab
           </div>
         </button>
 
-        {/* EINZELTAKT (75mm) Button */}
+        {/* STEP */}
         <button
           type="button"
           id="btn_cmd_step"
@@ -129,14 +125,14 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
           </div>
           <div className="my-2 text-left">
             <div className="text-sm font-bold text-white tracking-wider">EINZELTAKT (75mm)</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Vorschub um genau einen Slot</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">Vorschub um genau 3000 Schritte</div>
           </div>
           <div className="text-[9px] text-slate-500 text-left">
-            {isRunning ? 'Im Automatikmodus gesperrt' : 'Faehrt genau 75 mm'}
+            {isRunning ? 'Im Automatikmodus gesperrt' : 'Faehrt genau einen Slot weiter'}
           </div>
         </button>
 
-        {/* AUSWURF ROT TEST Button */}
+        {/* TEST STÖSSEL ROT */}
         <button
           type="button"
           id="btn_cmd_trigger_red"
@@ -147,19 +143,19 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
           }`}
         >
           <div className="flex items-center justify-between w-full">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">cmd=TRIGGER_EJECTOR&target=RED</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">cmd=TRIGGER_EJECTOR&amp;target=RED</span>
             <Target className="w-4 h-4 text-[#ef4444]" />
           </div>
           <div className="my-2 text-left">
-            <div className="text-sm font-bold text-white tracking-wider">AUSWURF ROT TEST</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Station 1: Servo Rot ansteuern</div>
+            <div className="text-sm font-bold text-white tracking-wider">TEST STÖSSEL ROT</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">Station 1: Linear-Stößel Rot (GPIO 13)</div>
           </div>
           <div className="text-[9px] text-slate-500 text-left">
-            SG90 Servo 1 Impuls ausloesen
+            Elektromagnetischer Auswurfimpuls von unten
           </div>
         </button>
 
-        {/* AUSWURF WEISS TEST Button */}
+        {/* TEST STÖSSEL WEISS */}
         <button
           type="button"
           id="btn_cmd_trigger_white"
@@ -170,19 +166,19 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
           }`}
         >
           <div className="flex items-center justify-between w-full">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">cmd=TRIGGER_EJECTOR&target=WHITE</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">cmd=TRIGGER_EJECTOR&amp;target=WHITE</span>
             <Target className="w-4 h-4 text-slate-300" />
           </div>
           <div className="my-2 text-left">
-            <div className="text-sm font-bold text-white tracking-wider">AUSWURF WEISS TEST</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Station 2: Servo Weiss ansteuern</div>
+            <div className="text-sm font-bold text-white tracking-wider">TEST STÖSSEL WEISS</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">Station 2: Linear-Stößel Weiß (GPIO 14)</div>
           </div>
           <div className="text-[9px] text-slate-500 text-left">
-            SG90 Servo 2 Impuls ausloesen
+            Elektromagnetischer Auswurfimpuls von unten
           </div>
         </button>
 
-        {/* ZAEHLER ZURUECKSETZEN Button */}
+        {/* RESET STATS */}
         <button
           type="button"
           id="btn_cmd_reset_stats"
@@ -206,7 +202,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
         </button>
       </div>
 
-      {/* TAKTZEIT SETZEN (500 bis 5000 ms) */}
+      {/* Taktzeit-Einstellung */}
       <div className="mt-4 pt-4 border-t border-[#1e293b] font-mono">
         <form onSubmit={handleSetCycleTime} className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
           <div className="sm:col-span-4">

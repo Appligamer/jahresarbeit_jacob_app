@@ -8,13 +8,55 @@ import type {
 
 const CONFIG_STORAGE_KEY = 'NWT2026_ESP32_SCADA_CONFIG_PROD';
 
-// Standard-Netzwerkadressen gemaess Spezifikation:
-// Access-Point-Modus: http://192.168.4.1
-// Authentifizierung: Zwingender Parameter ?key=NWT-2026-SORT-X79
-const DEFAULT_CONFIG: Esp32Config = {
-  baseUrl: 'http://192.168.4.1',
-  apiKey: 'NWT-2026-SORT-X79',
-  pollingIntervalMs: 500,
+const isIpAddressOrLocal = (hostname: string): boolean => {
+  return /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname === 'localhost' || hostname === '127.0.0.1';
+};
+
+const getInitialBaseUrl = (): string => {
+  if (typeof window === 'undefined') return 'http://192.168.4.1';
+  
+  // 1. URL-Parameter Prioritaet (?host= oder ?baseUrl=)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlHost = urlParams.get('host') || urlParams.get('baseUrl');
+  if (urlHost) return urlHost;
+
+  // 2. Same-Origin Auto-Detection: Wenn Frontend direkt vom ESP32 oder lokaler IP ausgeliefert wird
+  if (isIpAddressOrLocal(window.location.hostname)) {
+    return window.location.origin;
+  }
+
+  // 3. LocalStorage gespeicherte Konfiguration
+  try {
+    const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.baseUrl) return parsed.baseUrl;
+    }
+  } catch (err) {
+    console.warn('Fehler beim Laden der gespeicherten Konfiguration', err);
+  }
+
+  // 4. Default Fallback
+  return 'http://192.168.4.1';
+};
+
+const getInitialApiKey = (): string => {
+  if (typeof window === 'undefined') return 'NWT-2026-SORT-X79';
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlKey = urlParams.get('apiKey') || urlParams.get('key');
+  if (urlKey) return urlKey;
+
+  try {
+    const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.apiKey) return parsed.apiKey;
+    }
+  } catch {
+    // ignore
+  }
+
+  return 'NWT-2026-SORT-X79';
 };
 
 const INITIAL_TELEMETRY: Esp32TelemetryResponse = {
@@ -39,23 +81,11 @@ const INITIAL_TELEMETRY: Esp32TelemetryResponse = {
 };
 
 export function useEsp32Api() {
-  const [config, setConfig] = useState<Esp32Config>(() => {
-    if (typeof window === 'undefined') return DEFAULT_CONFIG;
-    try {
-      const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          baseUrl: parsed.baseUrl || DEFAULT_CONFIG.baseUrl,
-          apiKey: parsed.apiKey || DEFAULT_CONFIG.apiKey,
-          pollingIntervalMs: parsed.pollingIntervalMs || DEFAULT_CONFIG.pollingIntervalMs,
-        };
-      }
-    } catch (err) {
-      console.warn('Fehler beim Laden der gespeicherten Konfiguration', err);
-    }
-    return DEFAULT_CONFIG;
-  });
+  const [config, setConfig] = useState<Esp32Config>(() => ({
+    baseUrl: getInitialBaseUrl(),
+    apiKey: getInitialApiKey(),
+    pollingIntervalMs: 500,
+  }));
 
   const [telemetry, setTelemetry] = useState<Esp32TelemetryResponse>(INITIAL_TELEMETRY);
   const [connectionStatus, setConnectionStatus] = useState<ClientConnectionStatus>('GETRENNT');
@@ -78,6 +108,7 @@ export function useEsp32Api() {
   const configRef = useRef<Esp32Config>(config);
   const isConnectedRef = useRef<boolean>(false);
 
+  // Synchronisiere Ref und LocalStorage
   useEffect(() => {
     configRef.current = config;
     try {
@@ -86,6 +117,21 @@ export function useEsp32Api() {
       console.warn('Fehler beim Speichern der Konfiguration', err);
     }
   }, [config]);
+
+  // Permanente Mixed-Content & PNA Diagnose
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isHttps = window.location.protocol === 'https:';
+      const isHttpTarget = config.baseUrl.trim().toLowerCase().startsWith('http://');
+      if (isHttps && isHttpTarget) {
+        setMixedContentWarning(
+          'Achtung: Cloud-HTTPS-Modus aktiv. Direkte HTTP-Verbindungen zu lokalen IPs werden vom Browser blockiert. Nutze entweder einen HTTPS-Tunnel (z. B. Cloudflare Tunnel ueber den Heimserver) oder oeffne die Standalone-Version lokal ueber HTTP.'
+        );
+      } else {
+        setMixedContentWarning(null);
+      }
+    }
+  }, [config.baseUrl]);
 
   const addLog = useCallback((type: ScadaLogItem['type'], message: string, latency?: number) => {
     const timeStr = new Date().toLocaleTimeString('de-DE', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0');
@@ -97,12 +143,11 @@ export function useEsp32Api() {
         message,
         latencyMs: latency,
       },
-      ...prev.slice(0, 199),
+      ...prev.slice(0, 249),
     ]);
   }, []);
 
-  // URL-Erstellung gemaess Controller-Spezifikation:
-  // Single-Endpoint: <baseUrl>/api?key=<apiKey>&cmd=<cmd>...
+  // URL-Erstellung gemaess Spezifikation: Single-Endpoint <baseUrl>/api?key=...&cmd=...
   const buildRequestUrl = useCallback((cmd: string, params?: Record<string, string | number>) => {
     const currentCfg = configRef.current;
     let base = currentCfg.baseUrl.trim();
@@ -123,7 +168,7 @@ export function useEsp32Api() {
     return `${base}/api?${query.toString()}`;
   }, []);
 
-  // Universelle REST-Anfrage mit AbortController Timeout (2000 ms)
+  // REST-Anfrage mit AbortController Timeout (2000 ms) & Latenz-Tracking
   const sendRequest = useCallback(async (
     cmd: string,
     params?: Record<string, string | number>,
@@ -132,10 +177,6 @@ export function useEsp32Api() {
     const currentCfg = configRef.current;
     const startTime = performance.now();
     const url = buildRequestUrl(cmd, params);
-
-    // Pruefung auf Mixed-Content (HTTPS-Host versucht HTTP-Ziel aufzurufen)
-    const isHttpsContext = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    const isHttpTarget = currentCfg.baseUrl.trim().toLowerCase().startsWith('http://');
 
     try {
       const controller = new AbortController();
@@ -168,9 +209,7 @@ export function useEsp32Api() {
 
       const data: Esp32TelemetryResponse = await res.json();
 
-      // Erfolgreich empfangen
       consecutiveErrorsRef.current = 0;
-      setMixedContentWarning(null);
       setLatencyMs(roundTrip);
       setLastHeartbeat(new Date());
       setTelemetry(data);
@@ -178,7 +217,10 @@ export function useEsp32Api() {
       isConnectedRef.current = true;
 
       if (isManual) {
-        addLog('CMD', `Befehl '${cmd}' ausgefuehrt: Status ${data.status}, Takt ${data.cycle_ms}ms`, roundTrip);
+        addLog('CMD', `Befehl '${cmd}' bestaetigt: Status ${data.status}, Takt ${data.cycle_ms}ms`, roundTrip);
+      } else {
+        // Zyklischer Telemetrie-Eintrag
+        addLog('TELEMETRY', `Telemetrie empfangen: Status ${data.status} | Takt ${data.cycle_ms}ms | Slots [${data.slots.join(', ')}]`, roundTrip);
       }
 
       return true;
@@ -186,13 +228,6 @@ export function useEsp32Api() {
       const roundTrip = Math.round(performance.now() - startTime);
       consecutiveErrorsRef.current += 1;
 
-      // Wenn im HTTPS-Kontext ein HTTP-Endpunkt fehlschlaegt, ist dies typischerweise eine Browser-Blockade
-      if (isHttpsContext && isHttpTarget) {
-        const warningMsg = "Mixed-Content-Blockade: Browser blockiert lokale HTTP-Aufrufe. Bitte Seite lokal ueber HTTP ausfuehren oder im Browser 'Unsichere Inhalte' fuer diese Seite aktivieren.";
-        setMixedContentWarning(warningMsg);
-      }
-
-      // Sofortiger Status-Uebergang bei Verbindungsverlust
       if (consecutiveErrorsRef.current >= 2) {
         setConnectionStatus('FEHLER');
         isConnectedRef.current = false;
@@ -201,21 +236,19 @@ export function useEsp32Api() {
         setConnectionStatus('VERBINDE...');
       }
 
-      const errMsg = err instanceof Error ? err.message : 'Verbindungsfehler';
+      const errMsg = err instanceof Error ? err.message : 'Netzwerkfehler';
 
       if (isManual) {
-        addLog('ERROR', `Fehler bei Befehl '${cmd}': ${errMsg}`, roundTrip);
-      } else if (consecutiveErrorsRef.current === 2) {
-        addLog('WARN', `Verbindung zu ESP32 unterbrochen (${errMsg}) @ ${currentCfg.baseUrl}`, roundTrip);
+        addLog('ERROR', `Fehler bei Befehl '${cmd}': ${errMsg} @ ${url}`, roundTrip);
+      } else {
+        addLog('WARN', `Verbindung zu ESP32 unterbrochen (${errMsg}) @ ${currentCfg.baseUrl} [${roundTrip}ms]`, roundTrip);
       }
 
       return false;
     }
   }, [buildRequestUrl, addLog]);
 
-  // SCADA-Polling-Engine:
-  // - Wenn verbunden: zyklisch alle 500 ms (oder dyn. cycle_ms / 2) GET_STATUS
-  // - Bei Verbindungsverlust: Stoppen des schnellen Pollings; periodischer Reconnect alle 3000 ms
+  // SCADA-Polling-Engine
   useEffect(() => {
     let isActive = true;
 
@@ -230,9 +263,6 @@ export function useEsp32Api() {
 
       if (!isActive) return;
 
-      // Dynamisches Zeitintervall:
-      // Bei ONLINE: 500ms (oder halbe Zykluszeit, wenn definiert)
-      // Bei FEHLER / GETRENNT: Reconnect-Zyklus alle 3000ms
       let nextDelay = 3000;
       if (isConnectedRef.current) {
         const dynInterval = telemetry.cycle_ms ? Math.floor(telemetry.cycle_ms / 2) : 500;
@@ -242,7 +272,6 @@ export function useEsp32Api() {
       pollingTimerRef.current = setTimeout(runEngine, nextDelay);
     };
 
-    // Sofortiger Start des ersten Abrufversuchs
     setConnectionStatus('VERBINDE...');
     runEngine();
 
@@ -259,7 +288,15 @@ export function useEsp32Api() {
     };
   }, [config.baseUrl, config.apiKey, sendRequest]);
 
-  // Externe Aktionen
+  // Befehl: SET_WIFI zur dynamischen NVS-Flash-Speicherung von WLAN-Daten
+  const configureWifi = useCallback(async (ssid: string, pass: string): Promise<boolean> => {
+    const success = await sendRequest('SET_WIFI', { ssid, pass }, true);
+    if (success) {
+      addLog('SYS', 'WLAN-Daten an ESP32 uebertragen. Controller fuehrt Neustart durch (ca. 10s Wartezeit)...');
+    }
+    return success;
+  }, [sendRequest, addLog]);
+
   const executeCommand = useCallback(async (
     cmd: string,
     params?: Record<string, string | number>
@@ -292,6 +329,7 @@ export function useEsp32Api() {
     mixedContentWarning,
     updateConfig,
     executeCommand,
+    configureWifi,
     logs,
     clearLogs,
     triggerReconnectNow,

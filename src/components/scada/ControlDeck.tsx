@@ -1,239 +1,294 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Play, 
   Square, 
-  Pause, 
+  FastForward, 
   RotateCcw, 
-  Footprints, 
-  Target, 
-  Sliders, 
-  ShieldAlert, 
-  Check, 
-  ChevronRight,
-  Zap
+  Disc, 
+  Clock, 
+  Zap, 
+  ShieldAlert,
+  Check
 } from 'lucide-react';
-import type { OutgoingCommand, SystemRunStatus } from '../../types/scada.ts';
+import type { Esp32TelemetryResponse } from '../../types/scada.ts';
 
 interface ControlDeckProps {
-  status: SystemRunStatus;
-  currentStepDelayMs: number;
-  onSendCommand: (cmd: OutgoingCommand) => boolean;
+  telemetry: Esp32TelemetryResponse;
+  onExecuteCommand: (cmd: string, params?: Record<string, string | number>) => Promise<boolean>;
   disabled?: boolean;
 }
 
 export const ControlDeck: React.FC<ControlDeckProps> = ({
-  status,
-  currentStepDelayMs,
-  onSendCommand,
+  telemetry,
+  onExecuteCommand,
   disabled = false,
 }) => {
-  const [sliderDelay, setSliderDelay] = useState<number>(currentStepDelayMs || 1200);
-  const [lastAction, setLastAction] = useState<string | null>(null);
+  const [cycleTimeInput, setCycleTimeInput] = useState<number>(telemetry.cycle_ms || 1500);
+  const [cycleFeedback, setCycleFeedback] = useState<boolean>(false);
+  const [resetConfirm, setResetConfirm] = useState<boolean>(false);
 
-  const triggerCmd = (cmd: OutgoingCommand, label: string) => {
-    const ok = onSendCommand(cmd);
-    if (ok) {
-      setLastAction(label);
-      setTimeout(() => setLastAction(null), 2000);
+  useEffect(() => {
+    if (telemetry.cycle_ms && telemetry.cycle_ms > 0) {
+      setCycleTimeInput(telemetry.cycle_ms);
+    }
+  }, [telemetry.cycle_ms]);
+
+  const handleStart = () => {
+    onExecuteCommand('START');
+  };
+
+  const handleStop = () => {
+    onExecuteCommand('STOP');
+  };
+
+  const handleStep = () => {
+    onExecuteCommand('STEP');
+  };
+
+  const handleTriggerRed = () => {
+    onExecuteCommand('TRIGGER_EJECTOR', { target: 'RED' });
+  };
+
+  const handleTriggerWhite = () => {
+    onExecuteCommand('TRIGGER_EJECTOR', { target: 'WHITE' });
+  };
+
+  const handleResetStats = () => {
+    if (!resetConfirm) {
+      setResetConfirm(true);
+      setTimeout(() => setResetConfirm(false), 3000);
+      return;
+    }
+    onExecuteCommand('RESET_STATS');
+    setResetConfirm(false);
+  };
+
+  const handleSetCycleTime = (val?: number) => {
+    const targetVal = val !== undefined ? val : Number(cycleTimeInput);
+    if (!isNaN(targetVal) && targetVal >= 500 && targetVal <= 10000) {
+      onExecuteCommand('SET_CYCLE_TIME', { value: targetVal });
+      setCycleTimeInput(targetVal);
+      setCycleFeedback(true);
+      setTimeout(() => setCycleFeedback(false), 1500);
     }
   };
 
-  const handleSliderChange = (newVal: number) => {
-    setSliderDelay(newVal);
-    onSendCommand({ command: 'SET_STEP_DELAY', delay_ms: newVal });
-  };
+  const isRunning = telemetry.running || telemetry.status === 'AUTOMATIK';
+  const calculatedBpm = cycleTimeInput > 0 ? (60000 / cycleTimeInput).toFixed(1) : '0';
 
   return (
-    <div className="bg-[#0D0E12] border border-[#1A1D24] rounded-lg p-4 sm:p-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1A1D24] pb-3 mb-4">
+    <section id="scada_control_deck" className="scada-panel p-4 sm:p-5 w-full">
+      {/* Section Header */}
+      <div className="flex items-center justify-between border-b border-[#1e293b] pb-3 mb-4">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[#00FF88]" />
-          <h2 className="text-xs font-mono font-bold tracking-wider uppercase text-[#E1E4EA]">
-            CONTROL-DECK // PRIMÄRE MASCHINENSTEUERUNG
+          <Zap className="w-4 h-4 text-[#10b981]" />
+          <h2 className="text-xs sm:text-sm font-bold text-white uppercase font-mono tracking-wider">
+            STEUERUNGS-DECK (ANLAGEN-BEDIENUNG)
           </h2>
         </div>
-
-        {lastAction && (
-          <div className="text-[11px] font-mono text-[#00FF88] flex items-center gap-1.5 animate-fade-in">
-            <Check className="w-3.5 h-3.5" />
-            <span>BEFEHL ÜBERTRAGEN: {lastAction}</span>
-          </div>
-        )}
+        <span className="text-[10px] font-mono text-slate-400 bg-[#0b1120] px-2 py-0.5 border border-[#1e293b]">
+          DIREKT-BEFEHLE AN ESP32 /api
+        </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left: Main Machine State Control Buttons (Start / Stop Emergency / Pause / Reset) */}
-        <div className="lg:col-span-5 flex flex-col justify-between space-y-3">
-          <div className="text-[10px] font-mono uppercase text-[#626875] tracking-wider">
-            1. BETRIEBSMODUS & NOT-HALT
+      {/* 3-Column Control Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 font-mono">
+        
+        {/* COLUMN 1: HAUPTSTEUERUNG (START / NOT-HALT / STEP) */}
+        <div className="md:col-span-5 flex flex-col justify-between p-4 bg-[#0b1120] border border-[#1e293b]">
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-3 border-b border-white/5 pb-1.5">
+              1. Hauptantrieb &amp; Automatik
+            </span>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* START BUTTON */}
+              <button
+                type="button"
+                id="btn_cmd_start"
+                onClick={handleStart}
+                disabled={disabled || isRunning}
+                className={`scada-btn py-4 px-3 flex flex-col items-center justify-center gap-2 border text-xs font-bold transition-all cursor-pointer ${
+                  isRunning
+                    ? 'bg-[#10b981]/15 border-[#10b981] text-[#10b981] cursor-not-allowed opacity-80'
+                    : 'bg-[#10b981] hover:bg-[#059669] text-black border-[#10b981] shadow-lg active:translate-y-0.5'
+                }`}
+              >
+                <Play className={`w-5 h-5 ${isRunning ? 'animate-pulse' : ''}`} />
+                <span>START</span>
+                <span className="text-[10px] font-normal opacity-80">
+                  {isRunning ? 'AKTIV' : 'Automatik'}
+                </span>
+              </button>
+
+              {/* STOP BUTTON (NOT-HALT) */}
+              <button
+                type="button"
+                id="btn_cmd_stop"
+                onClick={handleStop}
+                disabled={disabled}
+                className="scada-btn py-4 px-3 flex flex-col items-center justify-center gap-2 bg-[#ef4444] hover:bg-[#dc2626] text-white border-2 border-red-400 text-xs font-black shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-all cursor-pointer active:translate-y-0.5"
+                title="Hält die Anlage sofort an und schaltet Schrittmotor stromlos"
+              >
+                <Square className="w-5 h-5 fill-current" />
+                <span>STOPP</span>
+                <span className="text-[10px] font-normal opacity-90">NOT-AUS</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5">
-            {/* START BUTTON */}
+          {/* EINZELSCHRITT (STEP) */}
+          <div className="mt-3 pt-3 border-t border-white/5">
             <button
-              onClick={() => triggerCmd({ command: 'START' }, 'START')}
-              disabled={disabled || status === 'RUNNING'}
-              className={`p-3.5 rounded-lg font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md ${
-                status === 'RUNNING'
-                  ? 'bg-[#00FF88]/20 text-[#00FF88] border border-[#00FF88]/50 ring-2 ring-[#00FF88]/20 opacity-90'
-                  : 'bg-[#111318] hover:bg-[#00FF88]/10 text-[#E1E4EA] hover:text-[#00FF88] border border-[#1A1D24] hover:border-[#00FF88]/40'
+              type="button"
+              id="btn_cmd_step"
+              onClick={handleStep}
+              disabled={disabled || isRunning}
+              className={`scada-btn w-full py-2.5 px-3 flex items-center justify-center gap-2 border text-xs font-bold transition-all ${
+                isRunning
+                  ? 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed'
+                  : 'bg-[#0f172a] hover:bg-[#1e293b] text-slate-200 border-[#334155] cursor-pointer'
               }`}
+              title="Führt exakt einen Einzeltakt (75 mm Bandvorschub) aus"
             >
-              <Play className="w-4 h-4 fill-current" />
-              <span>AUTOMATIK START</span>
+              <FastForward className="w-4 h-4 text-[#10b981]" />
+              <span>EINZELSCHRITT (STEP +75 mm)</span>
             </button>
-
-            {/* PAUSE BUTTON */}
-            <button
-              onClick={() => triggerCmd({ command: 'PAUSE' }, 'PAUSE')}
-              disabled={disabled || status === 'STOPPED'}
-              className={`p-3.5 rounded-lg font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md ${
-                status === 'PAUSED'
-                  ? 'bg-[#FF9500]/20 text-[#FF9500] border border-[#FF9500]/50 ring-2 ring-[#FF9500]/20'
-                  : 'bg-[#111318] hover:bg-[#FF9500]/10 text-[#E1E4EA] hover:text-[#FF9500] border border-[#1A1D24] hover:border-[#FF9500]/40'
-              }`}
-            >
-              <Pause className="w-4 h-4 fill-current" />
-              <span>PAUSE</span>
-            </button>
-          </div>
-
-          {/* EMERGENCY STOP (NOT-HALT) BUTTON */}
-          <button
-            onClick={() => triggerCmd({ command: 'STOP' }, 'NOT-HALT / STOP')}
-            disabled={disabled}
-            className="w-full p-4 rounded-lg bg-[#2A0B0D] hover:bg-[#3D0F13] active:scale-[0.99] border-2 border-[#FF3B30] text-[#FF3B30] font-mono font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-3 transition-all cursor-pointer shadow-[0_0_20px_rgba(255,59,48,0.25)] hover:shadow-[0_0_30px_rgba(255,59,48,0.4)]"
-          >
-            <Square className="w-5 h-5 fill-current" />
-            <span>NOT-HALT / SOFORT-STOPP</span>
-          </button>
-
-          {/* Reset Stats button */}
-          <button
-            onClick={() => triggerCmd({ command: 'RESET_STATS' }, 'ZÄHLER RESET')}
-            disabled={disabled}
-            className="w-full py-2 rounded bg-[#111318] hover:bg-[#1A1D24] border border-[#1A1D24] text-[#626875] hover:text-[#E1E4EA] font-mono text-[11px] uppercase transition-all cursor-pointer flex items-center justify-center gap-2"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>TELEMETRIE & ZÄHLER ZURÜCKSETZEN</span>
-          </button>
-        </div>
-
-        {/* Center: Calibration & Single Step / Ejector Diagnostics */}
-        <div className="lg:col-span-4 flex flex-col justify-between space-y-3 border-t lg:border-t-0 lg:border-l lg:border-r border-[#1A1D24] pt-3 lg:pt-0 lg:px-4">
-          <div className="text-[10px] font-mono uppercase text-[#626875] tracking-wider">
-            2. EINZELSCHRITT & AKTOR-TESTS
-          </div>
-
-          {/* Manual Step Button */}
-          <button
-            onClick={() => triggerCmd({ command: 'MANUAL_STEP' }, 'MANUAL STEP (+75mm)')}
-            disabled={disabled}
-            className="w-full p-3 rounded-lg bg-[#111318] hover:bg-[#1A1D24] active:bg-[#222731] border border-[#1A1D24] hover:border-[#00FF88]/40 text-[#E1E4EA] hover:text-[#00FF88] font-mono text-xs font-bold uppercase transition-all cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-2">
-              <Footprints className="w-4 h-4 text-[#00FF88]" />
-              <span>EINZELTAKT VORSCHUB</span>
-            </div>
-            <span className="text-[10px] text-[#626875] bg-[#0D0E12] px-2 py-0.5 rounded border border-[#1A1D24]">
-              +75 mm
-            </span>
-          </button>
-
-          {/* Test Ejector Station 1 (Rot) */}
-          <button
-            onClick={() => triggerCmd({ command: 'TRIGGER_EJECTOR', station: 1 }, 'AUSWURF SERVO 1 (ROT)')}
-            disabled={disabled}
-            className="w-full p-2.5 rounded-lg bg-[#111318] hover:bg-[#FF3B30]/10 border border-[#1A1D24] hover:border-[#FF3B30]/50 text-[#E1E4EA] hover:text-[#FF3B30] font-mono text-xs font-semibold uppercase transition-all cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-2">
-              <Target className="w-4 h-4 text-[#FF3B30]" />
-              <span>TEST STÖSSEL 1 (ROT)</span>
-            </div>
-            <span className="text-[10px] text-[#FF3B30] font-mono">
-              Hub 25mm @ 75mm
-            </span>
-          </button>
-
-          {/* Test Ejector Station 2 (Weiß) */}
-          <button
-            onClick={() => triggerCmd({ command: 'TRIGGER_EJECTOR', station: 2 }, 'AUSWURF SERVO 2 (WEISS)')}
-            disabled={disabled}
-            className="w-full p-2.5 rounded-lg bg-[#111318] hover:bg-[#F0F2F5]/10 border border-[#1A1D24] hover:border-[#F0F2F5]/50 text-[#E1E4EA] hover:text-[#F0F2F5] font-mono text-xs font-semibold uppercase transition-all cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-2">
-              <Target className="w-4 h-4 text-[#F0F2F5]" />
-              <span>TEST STÖSSEL 2 (WEISS)</span>
-            </div>
-            <span className="text-[10px] text-[#F0F2F5] font-mono">
-              Hub 25mm @ 150mm
-            </span>
-          </button>
-
-          <div className="text-[10px] font-mono text-[#626875] pt-1">
-            * Einzelschritte und Stößeltests erfolgen hardware-synchron.
+            <p className="text-[10px] text-slate-500 mt-1 text-center">
+              Nur im Stillstand aktiv (Vorschub um 1 Station)
+            </p>
           </div>
         </div>
 
-        {/* Right: Conveyor Speed / Step Delay Slider */}
-        <div className="lg:col-span-3 flex flex-col justify-between space-y-3 pt-3 lg:pt-0">
-          <div className="flex items-center justify-between text-[10px] font-mono uppercase text-[#626875] tracking-wider">
-            <span>3. GESCHWINDIGKEIT</span>
-            <span className="text-[#00FF88] font-bold tabular-nums">
-              {sliderDelay} ms
+        {/* COLUMN 2: MANUELLE AKTOREN & ZÄHLER-RESET */}
+        <div className="md:col-span-3 flex flex-col justify-between p-4 bg-[#0b1120] border border-[#1e293b]">
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-3 border-b border-white/5 pb-1.5">
+              2. Aktoren-Funktionstest
             </span>
+
+            <div className="space-y-2.5">
+              {/* Auswurf Rot */}
+              <button
+                type="button"
+                id="btn_trigger_red"
+                onClick={handleTriggerRed}
+                disabled={disabled}
+                className="scada-btn w-full py-2.5 px-3 bg-[#0f172a] hover:bg-[#ef4444]/20 border border-[#ef4444]/60 text-slate-200 hover:text-[#ef4444] text-xs flex items-center justify-between cursor-pointer transition-colors"
+                title="Löst Servo 1 manuell aus (target=RED)"
+              >
+                <div className="flex items-center gap-2">
+                  <Disc className="w-3.5 h-3.5 text-[#ef4444]" />
+                  <span>AUSWURF ROT</span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-mono">SERVO 1</span>
+              </button>
+
+              {/* Auswurf Weiss */}
+              <button
+                type="button"
+                id="btn_trigger_white"
+                onClick={handleTriggerWhite}
+                disabled={disabled}
+                className="scada-btn w-full py-2.5 px-3 bg-[#0f172a] hover:bg-white/20 border border-white/60 text-slate-200 hover:text-white text-xs flex items-center justify-between cursor-pointer transition-colors"
+                title="Löst Servo 2 manuell aus (target=WHITE)"
+              >
+                <div className="flex items-center gap-2">
+                  <Disc className="w-3.5 h-3.5 text-white" />
+                  <span>AUSWURF WEISS</span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-mono">SERVO 2</span>
+              </button>
+            </div>
           </div>
 
-          <div className="bg-[#090A0D] border border-[#1A1D24] rounded-lg p-3 space-y-3">
-            <div className="flex justify-between items-center text-xs font-mono">
-              <span className="text-[#626875]">Taktverzögerung:</span>
-              <span className="font-bold text-[#E1E4EA] tabular-nums">
-                {(sliderDelay / 1000).toFixed(2)} s
+          {/* Reset Stats Button */}
+          <div className="mt-3 pt-3 border-t border-white/5">
+            <button
+              type="button"
+              id="btn_cmd_reset_stats"
+              onClick={handleResetStats}
+              disabled={disabled}
+              className={`scada-btn w-full py-2 px-3 border text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+                resetConfirm
+                  ? 'bg-[#ef4444] text-white border-red-400 font-bold'
+                  : 'bg-[#0f172a] hover:bg-[#1e293b] text-slate-400 hover:text-white border-[#334155]'
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>{resetConfirm ? 'WIRKLICH NULLEN?' : 'ZÄHLER RESETTEN'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* COLUMN 3: TAKTZEIT-EINSTELLUNG (SET_CYCLE_TIME) */}
+        <div className="md:col-span-4 flex flex-col justify-between p-4 bg-[#0b1120] border border-[#1e293b]">
+          <div>
+            <div className="flex items-center justify-between border-b border-white/5 pb-1.5 mb-3">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                3. Taktzeit (SET_CYCLE_TIME)
+              </span>
+              <span className="text-xs font-bold text-white font-mono">
+                {cycleTimeInput} ms
               </span>
             </div>
 
             {/* Slider */}
-            <input
-              type="range"
-              min={800}
-              max={3000}
-              step={50}
-              value={sliderDelay}
-              onChange={(e) => handleSliderChange(Number(e.target.value))}
-              disabled={disabled}
-              className="w-full h-1.5 bg-[#1A1D24] rounded-lg appearance-none cursor-pointer accent-[#00FF88]"
-            />
-
-            <div className="flex justify-between text-[10px] font-mono text-[#626875]">
-              <span>800ms (Max Speed)</span>
-              <span>3000ms (Slow)</span>
+            <div className="space-y-1 my-2">
+              <input
+                type="range"
+                id="slider_cycle_time"
+                min={500}
+                max={5000}
+                step={50}
+                value={cycleTimeInput}
+                onChange={(e) => setCycleTimeInput(Number(e.target.value))}
+                className="w-full h-1.5 bg-slate-900 accent-[#10b981] rounded-none cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-slate-500">
+                <span>500 ms (Schnell)</span>
+                <span>5000 ms (Langsam)</span>
+              </div>
             </div>
 
-            {/* Preset Buttons */}
-            <div className="grid grid-cols-3 gap-1.5 pt-1">
-              {[1000, 1200, 1500].map((preset) => (
+            {/* Presets */}
+            <div className="grid grid-cols-4 gap-1.5 mt-2">
+              {[800, 1200, 1500, 2000].map((val) => (
                 <button
-                  key={preset}
-                  onClick={() => handleSliderChange(preset)}
-                  disabled={disabled}
-                  className={`py-1 rounded text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
-                    sliderDelay === preset
-                      ? 'bg-[#00FF88] text-[#050507]'
-                      : 'bg-[#111318] text-[#626875] hover:text-[#E1E4EA] border border-[#1A1D24]'
+                  key={val}
+                  type="button"
+                  onClick={() => handleSetCycleTime(val)}
+                  className={`py-1 text-[10px] border cursor-pointer ${
+                    cycleTimeInput === val
+                      ? 'bg-[#10b981]/20 border-[#10b981] text-[#10b981] font-bold'
+                      : 'bg-[#0f172a] hover:bg-[#1e293b] border-[#334155] text-slate-400'
                   }`}
                 >
-                  {preset}ms
+                  {val}ms
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="text-[10px] font-mono text-[#626875]">
-            Überträgt Befehl: <code className="text-[#E1E4EA]">SET_STEP_DELAY</code>
+          {/* Apply Button & BPM Output */}
+          <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2">
+            <button
+              type="button"
+              id="btn_apply_cycle_time"
+              onClick={() => handleSetCycleTime()}
+              disabled={disabled}
+              className="scada-btn flex-1 py-2 bg-[#10b981] hover:bg-[#059669] text-black font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              {cycleFeedback ? <Check className="w-3.5 h-3.5" /> : null}
+              <span>{cycleFeedback ? 'GESETZT' : 'ÜBERNEHMEN'}</span>
+            </button>
+            <div className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 text-[11px] text-slate-400 font-mono text-center">
+              <span>~{calculatedBpm} BPM</span>
+            </div>
           </div>
         </div>
+
       </div>
-    </div>
+    </section>
   );
 };

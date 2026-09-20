@@ -1,65 +1,57 @@
-// SCADA & Mechatronics Types for ESP32 Table Tennis Ball Sorter
+// ======================================================================
+// SCADA & MECHATRONIK KONTRAKT - ESP32 TISCHTENNISBALL FARBSORTIERANLAGE
+// ======================================================================
 
-export type SlotState = 0 | 1 | 2 | 99;
+// 0 = LEER, 1 = ROT, 2 = WEISS, 99 = UNBEKANNT
+export type SlotBall = 0 | 1 | 2 | 99;
 
-export type SystemRunStatus = 'RUNNING' | 'STOPPED' | 'PAUSED' | 'ERROR';
+export type SystemStatusText = 'AUTOMATIK' | 'GESTOPPT' | 'STANDBY';
 
-export type LogLevel = 'INFO' | 'WARN' | 'ERROR';
+export type SensorDetected = 'LEER' | 'ROT' | 'WEISS' | 'UNBEKANNT' | 'SENSOR_FEHLT';
 
-export interface SensorRaw {
+export interface Esp32SensorData {
+  detected: SensorDetected;
   r: number;
   g: number;
   b: number;
-  clear: number;
+  c: number;
 }
 
-export interface MachineStats {
-  total_processed: number;
-  count_red: number;
-  count_white: number;
-  count_error: number;
-  throughput_bpm: number;
+export interface Esp32Stats {
+  total: number;
+  red: number;
+  white: number;
+  unknown: number;
 }
 
-export interface TelemetryPayload {
-  status: SystemRunStatus;
-  uptime_sec: number;
-  current_cycle_time_ms: number;
-  conveyor_array: SlotState[];
-  sensor_raw: SensorRaw;
-  sensor_detected: 'ROT' | 'WEISS' | 'LEER' | 'UNBEKANNT';
-  stats: MachineStats;
-  ejector_active?: {
-    station: number;
-    active: boolean;
-  };
-  sensor_active?: boolean;
+// Exakte JSON-Antwortstruktur des ESP32 gemäß Spezifikation
+export interface Esp32TelemetryResponse {
+  running: boolean;
+  status: SystemStatusText;
+  error: string;
+  cycle_ms: number;
+  slots: [SlotBall, SlotBall, SlotBall]; // Index 0: Sensor, Index 1: Auswurf Rot, Index 2: Auswurf Weiss
+  stats: Esp32Stats;
+  sensor: Esp32SensorData;
 }
 
-export interface LogPayload {
-  id?: string;
+export interface Esp32AuthError {
+  error: string;
+}
+
+export type ClientConnectionStatus = 'ONLINE' | 'STANDBY' | 'OFFLINE' | 'AUTH_ERROR';
+
+export interface Esp32Config {
+  baseUrl: string;
+  apiKey: string;
+  pollingIntervalMs: number;
+  useProxyFallback: boolean;
+}
+
+export interface ScadaLogItem {
+  id: string;
   timestamp: string;
-  level: LogLevel;
+  type: 'CMD' | 'TELEMETRY' | 'ERROR' | 'WARN' | 'SYS';
   message: string;
-}
-
-export type OutgoingCommand = 
-  | { command: 'START' }
-  | { command: 'STOP' }
-  | { command: 'PAUSE' }
-  | { command: 'RESET_STATS' }
-  | { command: 'MANUAL_STEP' }
-  | { command: 'TRIGGER_EJECTOR'; station: number }
-  | { command: 'SET_STEP_DELAY'; delay_ms: number }
-  | { command: 'PING'; timestamp: number };
-
-export type ConnectionState = 'ONLINE' | 'OFFLINE' | 'CONNECTING';
-
-export interface ConnectionConfig {
-  host: string;
-  port: number;
-  path: string;
-  protocol: 'ws' | 'wss';
-  autoReconnect: boolean;
-  reconnectIntervalMs: number;
+  latencyMs?: number;
 }

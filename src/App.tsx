@@ -1,125 +1,79 @@
-import React, { useState } from 'react';
-import { useEsp32WebSocket } from './hooks/useEsp32WebSocket.ts';
-import { ScadaHeader } from './components/scada/ScadaHeader.tsx';
-import { ConveyorRibbon } from './components/scada/ConveyorRibbon.tsx';
-import { TelemetryKpiPanel } from './components/scada/TelemetryKpiPanel.tsx';
+import React from 'react';
+import { useEsp32Api } from './hooks/useEsp32Api.ts';
+import { HeaderBar } from './components/scada/HeaderBar.tsx';
+import { ConveyorShiftRegister } from './components/scada/ConveyorShiftRegister.tsx';
+import { TelemetryKpis } from './components/scada/TelemetryKpis.tsx';
 import { ControlDeck } from './components/scada/ControlDeck.tsx';
-import { SystemTerminal } from './components/scada/SystemTerminal.tsx';
-import { ConnectionSettingsModal } from './components/scada/ConnectionSettingsModal.tsx';
-import { Esp32FirmwareReferenceModal } from './components/scada/Esp32FirmwareReferenceModal.tsx';
+import { EventLogConsole } from './components/scada/EventLogConsole.tsx';
 
 export default function App() {
   const {
-    connectionState,
-    pingMs,
     telemetry,
-    logs,
-    minCycleTime,
-    maxCycleTime,
+    connectionStatus,
+    latencyMs,
+    lastHeartbeat,
     config,
     updateConfig,
-    connect,
-    disconnect,
-    sendCommand,
+    executeCommand,
+    logs,
     clearLogs,
-  } = useEsp32WebSocket();
-
-  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [isFirmwareOpen, setIsFirmwareOpen] = useState<boolean>(false);
-
-  const handleTriggerEjectorFromRibbon = (station: number) => {
-    sendCommand({
-      command: 'TRIGGER_EJECTOR',
-      station,
-    });
-  };
+    triggerPollingNow,
+  } = useEsp32Api();
 
   return (
-    <div id="scada_app_root" className="min-h-screen bg-[#050507] text-[#E1E4EA] font-sans flex flex-col selection:bg-[#00FF88]/20 selection:text-[#00FF88]">
-      {/* 1. HEADER & STATUS-LEISTE */}
-      <ScadaHeader
-        connectionState={connectionState}
-        pingMs={pingMs}
+    <div id="scada_app_root" className="min-h-screen bg-[#06080d] text-[#e2e8f0] font-mono flex flex-col antialiased">
+      {/* 1. HEADER & VERBINDUNGS-LEISTE */}
+      <HeaderBar
         telemetry={telemetry}
+        connectionStatus={connectionStatus}
+        latencyMs={latencyMs}
         config={config}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenFirmware={() => setIsFirmwareOpen(true)}
-        onReconnect={connect}
+        onUpdateConfig={updateConfig}
+        onTriggerPing={triggerPollingNow}
       />
 
-      {/* MAIN SCADA DASHBOARD CONTAINER */}
-      <main id="scada_main_content" className="flex-1 max-w-[1600px] w-full mx-auto p-4 md:p-6 flex flex-col gap-6">
+      {/* HAUPT-LEITSTAND CONTAINER */}
+      <main id="scada_main_viewport" className="flex-1 max-w-[1680px] w-full mx-auto px-3 sm:px-5 py-5 flex flex-col gap-5">
         
-        {/* 2. INTERAKTIVE LIVE-FÖRDERBAND-VISUALISIERUNG */}
-        <section id="scada_section_conveyor">
-          <ConveyorRibbon
-            telemetry={telemetry}
-            onTriggerEjector={handleTriggerEjectorFromRibbon}
-          />
-        </section>
+        {/* 2. VIRTUELLES SCHIEBEREGISTER (75 mm BAND-VISUALISIERUNG) */}
+        <ConveyorShiftRegister telemetry={telemetry} />
 
-        {/* 3. SCADA-TELEMETRIE & KPI-PANEL */}
-        <section id="scada_section_telemetry">
-          <TelemetryKpiPanel
-            telemetry={telemetry}
-            minCycleTime={minCycleTime}
-            maxCycleTime={maxCycleTime}
-          />
-        </section>
+        {/* 3. ECHTZEIT-TELEMETRIE & KPI-KARTEN + SENSOR-LIVE-MONITOR */}
+        <TelemetryKpis telemetry={telemetry} />
 
-        {/* 4. CONTROL-DECK (BEDIENFELD) */}
-        <section id="scada_section_control">
-          <ControlDeck
-            status={telemetry.status}
-            currentStepDelayMs={telemetry.current_cycle_time_ms}
-            onSendCommand={sendCommand}
-            disabled={connectionState === 'CONNECTING'}
-          />
-        </section>
+        {/* 4. STEUERUNGS-DECK (START / STOP / STEP / AKTOREN / TAKTZEIT) */}
+        <ControlDeck
+          telemetry={telemetry}
+          onExecuteCommand={executeCommand}
+          disabled={connectionStatus === 'OFFLINE' || connectionStatus === 'AUTH_ERROR'}
+        />
 
-        {/* 5. LIVE-SYSTEM-TERMINAL (EVENT-LOG) */}
-        <section id="scada_section_terminal">
-          <SystemTerminal
-            logs={logs}
-            onClearLogs={clearLogs}
-          />
-        </section>
+        {/* 5. FEHLER- & NETZWERK-ÜBERWACHUNG (TERMINAL & EVENT-STREAM) */}
+        <EventLogConsole
+          logs={logs}
+          connectionStatus={connectionStatus}
+          targetBaseUrl={config.baseUrl}
+          onClearLogs={clearLogs}
+          onRetryConnection={triggerPollingNow}
+        />
 
       </main>
 
-      {/* FOOTER / SYSTEM METRICS BAR */}
-      <footer id="scada_footer" className="border-t border-[#1A1D24] bg-[#0A0B0E] py-2 px-4 text-xs font-mono text-[#626875] flex flex-col sm:flex-row justify-between items-center gap-2">
-        <div className="flex items-center gap-4">
-          <span>ESP32 MECHATRONIK SYSTEM v2.4.0</span>
+      {/* FOOTER METRICS BAR */}
+      <footer id="scada_footer_bar" className="border-t border-[#1e293b] bg-[#090d16] py-2.5 px-4 text-xs font-mono text-slate-400 flex flex-col sm:flex-row justify-between items-center gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="font-bold text-white uppercase">NWT-2026 JAHRESARBEIT</span>
           <span>•</span>
-          <span>SCHIEBEREGISTER 75mm RASTER</span>
+          <span>ESP32 MECHATRONIK SCADA</span>
           <span>•</span>
-          <span>TCS34725 &amp; PCA9685 SERVO</span>
+          <span className="text-slate-500">SCHNITTSTELLE: /api</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span>WS: {config.protocol}://{config.host}:{config.port}{config.path}</span>
+        <div className="flex items-center gap-3 text-[11px]">
+          <span>LETZTER HEARTBEAT: <strong className="text-slate-200">{lastHeartbeat ? lastHeartbeat.toLocaleTimeString('de-DE') : '--:--:--'}</strong></span>
           <span>•</span>
-          <span className={connectionState === 'ONLINE' ? 'text-[#00FF88]' : 'text-[#FF3B30]'}>
-            {connectionState}
-          </span>
+          <span className="text-[#10b981]">SYSTEM BEREIT</span>
         </div>
       </footer>
-
-      {/* SETTINGS MODAL */}
-      <ConnectionSettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        config={config}
-        onSaveConfig={updateConfig}
-        onReconnect={connect}
-        onDisconnect={disconnect}
-      />
-
-      {/* C++ FIRMWARE CODE REFERENCE MODAL */}
-      <Esp32FirmwareReferenceModal
-        isOpen={isFirmwareOpen}
-        onClose={() => setIsFirmwareOpen(false)}
-      />
     </div>
   );
 }

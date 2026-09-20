@@ -1,1 +1,95 @@
 @import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code", "Roboto Mono", Menlo, Monaco, Consolas, monospace;
+  }
+
+  * {
+    border-color: #1e293b;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    font-family: var(--font-mono);
+    background-color: #06080d;
+    color: #e2e8f0;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.02em;
+  }
+
+  /* Industrial high-precision scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #090d16;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 0;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+  }
+}
+
+/* Industrial SCADA Panel Styles */
+.scada-panel {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  position: relative;
+}
+
+.scada-panel-inner {
+  background-color: #0b1120;
+  border: 1px solid #1e293b;
+}
+
+.scada-header-bar {
+  background-color: #090d16;
+  border-bottom: 1px solid #1e293b;
+}
+
+/* Technical grid ruler styling */
+.tech-grid {
+  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, rgba(30, 41, 59, 0.3) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30, 41, 59, 0.3) 1px, transparent 1px);
+}
+
+/* Crisp button styling */
+.scada-btn {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  transition: all 120ms cubic-bezier(0, 0, 0.2, 1);
+  border-radius: 2px;
+  user-select: none;
+}
+
+.scada-btn:active {
+  transform: translateY(1px);
+}
+
+/* Blinking animations for alerts */
+@keyframes scada-blink-amber {
+  0%, 100% {
+    border-color: #f59e0b;
+    box-shadow: inset 0 0 10px rgba(245, 158, 11, 0.3), 0 0 12px rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    border-color: #78350f;
+    box-shadow: none;
+  }
+}
+
+.scada-pulse-amber {
+  animation: scada-blink-amber 1.2s infinite ease-in-out;
+}

@@ -1,6 +1,6 @@
 {
-  "name": "ESP32 SCADA Farbsortieranlage",
-  "description": "Echtzeit-Überwachung und Steuerung einer automatisierten Tischtennisball-Farbsortieranlage auf ESP32-Basis mit Förderband-Schieberegister und SCADA-Telemetrie.",
+  "name": "NWT-2026 SORTIERLEITSTAND - ESP32 SCADA",
+  "description": "Echtzeit-Fernsteuerung und Überwachung einer automatisierten Tischtennisball-Farbsortieranlage auf ESP32-Basis mit 75mm Schieberegister und SCADA-Telemetrie.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
